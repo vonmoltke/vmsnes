@@ -7,6 +7,8 @@
 #include <utility>
 #include <nall/algorithm.hpp>
 #include <nall/bit.hpp>
+#include <nall/maybe.hpp>
+#include <nall/memory.hpp>
 #include <nall/sort.hpp>
 #include <nall/utility.hpp>
 
@@ -42,7 +44,7 @@ public:
   void reset() {
     if(pool) {
       for(unsigned n = 0; n < objectsize; n++) pool[poolbase + n].~T();
-      free(pool);
+      memory::free(pool);
     }
     pool = nullptr;
     poolbase = 0;
@@ -54,7 +56,7 @@ public:
     if(size <= poolsize) return;
     size = bit::round(size);  //amortize growth
 
-    T* copy = (T*)calloc(size, sizeof(T));
+    T* copy = (T*)memory::allocate(size * sizeof(T));
     for(unsigned n = 0; n < objectsize; n++) new(copy + n) T(std::move(pool[poolbase + n]));
     free(pool);
     pool = copy;
@@ -62,14 +64,20 @@ public:
     poolsize = size;
   }
 
-  void resize(unsigned size) {
-    T* copy = (T*)calloc(size, sizeof(T));
+  void resize(unsigned size, T value = T()) {
+    T* copy = (T*)memory::allocate(size * sizeof(T));
     for(unsigned n = 0; n < size && n < objectsize; n++) new(copy + n) T(std::move(pool[poolbase + n]));
+    for(unsigned n = objectsize; n < size; n++) new(copy + n) T(value);
     reset();
     pool = copy;
     poolbase = 0;
     poolsize = size;
     objectsize = size;
+  }
+
+  void reallocate(unsigned size, T value = T()) {
+    reset();
+    resize(size, value);
   }
 
   template<typename... Args> void prepend(const T& data, Args&&... args) {
@@ -108,7 +116,10 @@ public:
   }
 
   void insert(unsigned position, const T& data) {
-    if(position == 0) return prepend(data);
+    if(position == 0) {
+      prepend(data);
+      return;
+    }
     append(data);
     if(position == ~0u) return;
     for(signed n = objectsize - 1; n > position; n--) {
@@ -164,9 +175,9 @@ public:
     nall::sort(pool + poolbase, objectsize, lessthan);
   }
 
-  optional<unsigned> find(const T& data) {
-    for(unsigned n = 0; n < objectsize; n++) if(pool[poolbase + n] == data) return {true, n};
-    return false;
+  maybe<unsigned> find(const T& data) const {
+    for(unsigned n = 0; n < objectsize; n++) if(pool[poolbase + n] == data) return n;
+    return nothing;
   }
 
   T& first() {
@@ -242,6 +253,7 @@ public:
 
   //copy
   inline vector& operator=(const vector& source) {
+    if(this == &source) return *this;
     reset();
     reserve(source.size());
     for(auto& data : source) append(data);
@@ -250,6 +262,7 @@ public:
 
   //move
   inline vector& operator=(vector&& source) {
+    if(this == &source) return *this;
     reset();
     pool = source.pool;
     poolbase = source.poolbase;
