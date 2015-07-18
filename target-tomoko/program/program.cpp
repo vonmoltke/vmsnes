@@ -1,8 +1,6 @@
 #include "../tomoko.hpp"
 #include <fc/interface/interface.hpp>
 #include <sfc/interface/interface.hpp>
-#include <gb/interface/interface.hpp>
-#include <gba/interface/interface.hpp>
 #include "interface.cpp"
 #include "media.cpp"
 #include "state.cpp"
@@ -17,8 +15,6 @@ Program::Program() {
 
   emulators.append(new Famicom::Interface);
   emulators.append(new SuperFamicom::Interface);
-  emulators.append(new GameBoy::Interface);
-  emulators.append(new GameBoyAdvance::Interface);
   for(auto& emulator : emulators) emulator->bind = this;
 
   new ConfigurationManager;
