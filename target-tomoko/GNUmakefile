@@ -5,8 +5,6 @@ include processor/GNUmakefile
 
 include fc/GNUmakefile
 include sfc/GNUmakefile
-include gb/GNUmakefile
-include gba/GNUmakefile
 
 ui_objects := ui-tomoko ui-program ui-configuration ui-input
 ui_objects += ui-settings ui-tools ui-presentation
