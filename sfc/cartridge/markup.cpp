@@ -9,7 +9,6 @@ void Cartridge::parse_markup(const char* markup) {
 
   mapping.reset();
   parse_markup_cartridge(cartridge);
-  parse_markup_icd2(cartridge["icd2"]);
   parse_markup_bsx(cartridge["bsx"]);
   parse_markup_satellaview(cartridge["satellaview"]);
   parse_markup_sufamiturbo(cartridge["sufamiturbo[0]"], 0);
@@ -68,26 +67,6 @@ void Cartridge::parse_markup_cartridge(Markup::Node root) {
       Mapping m(ram);
       parse_markup_map(m, node);
       if(m.size == 0) m.size = ram.size();
-      mapping.append(m);
-    }
-  }
-}
-
-void Cartridge::parse_markup_icd2(Markup::Node root) {
-  if(!root) return;
-  has_gb_slot = true;
-  icd2.revision = max(1, root["revision"].decimal());
-
-  GameBoy::cartridge.load_empty(GameBoy::System::Revision::SuperGameBoy);
-  interface->loadRequest(ID::SuperGameBoy, "Game Boy", "gb");
-
-  string bootROMName = root["rom/name"].text();
-  interface->loadRequest(ID::SuperGameBoyBootROM, bootROMName);
-
-  for(auto node : root.find("map")) {
-    if(node["id"].text() == "io") {
-      Mapping m({&ICD2::read, &icd2}, {&ICD2::write, &icd2});
-      parse_markup_map(m, node);
       mapping.append(m);
     }
   }

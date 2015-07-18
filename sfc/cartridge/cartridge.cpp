@@ -8,10 +8,6 @@ namespace SuperFamicom {
 Cartridge cartridge;
 
 string Cartridge::title() {
-  if(information.title.gameBoy.empty() == false) {
-    return {information.title.cartridge, " + ", information.title.gameBoy};
-  }
-
   if(information.title.satellaview.empty() == false) {
     return {information.title.cartridge, " + ", information.title.satellaview};
   }
@@ -50,13 +46,11 @@ void Cartridge::load() {
   has_msu1       = false;
 
   information.markup.cartridge    = "";
-  information.markup.gameBoy      = "";
   information.markup.satellaview  = "";
   information.markup.sufamiTurboA = "";
   information.markup.sufamiTurboB = "";
 
   information.title.cartridge     = "";
-  information.title.gameBoy       = "";
   information.title.satellaview   = "";
   information.title.sufamiTurboA  = "";
   information.title.sufamiTurboB  = "";
@@ -64,13 +58,8 @@ void Cartridge::load() {
   interface->loadRequest(ID::Manifest, "manifest.bml");
   parse_markup(information.markup.cartridge);
 
-  //Super Game Boy
-  if(cartridge.has_gb_slot()) {
-    sha256 = Hash::SHA256(GameBoy::cartridge.romdata, GameBoy::cartridge.romsize).digest();
-  }
-
   //Broadcast Satellaview
-  else if(cartridge.has_bs_cart() && cartridge.has_bs_slot()) {
+  if(cartridge.has_bs_cart() && cartridge.has_bs_slot()) {
     sha256 = Hash::SHA256(satellaviewcartridge.memory.data(), satellaviewcartridge.memory.size()).digest();
   }
 
@@ -111,22 +100,6 @@ void Cartridge::load() {
 
   system.load();
   loaded = true;
-}
-
-void Cartridge::load_super_game_boy() {
-  interface->loadRequest(ID::SuperGameBoyManifest, "manifest.bml");
-  auto document = BML::unserialize(information.markup.gameBoy);
-  information.title.gameBoy = document["information/title"].text();
-
-  auto rom = document["cartridge/rom"];
-  auto ram = document["cartridge/ram"];
-
-  GameBoy::cartridge.information.markup = information.markup.gameBoy;
-  GameBoy::cartridge.load(GameBoy::System::Revision::SuperGameBoy);
-
-  if(auto name = rom["name"].text()) interface->loadRequest(ID::SuperGameBoyROM, name);
-  if(auto name = ram["name"].text()) interface->loadRequest(ID::SuperGameBoyRAM, name);
-  if(auto name = ram["name"].text()) memory.append({ID::SuperGameBoyRAM, name});
 }
 
 void Cartridge::load_satellaview() {

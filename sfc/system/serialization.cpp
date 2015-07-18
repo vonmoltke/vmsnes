@@ -57,7 +57,6 @@ void System::serialize_all(serializer& s) {
   ppu.serialize(s);
   dsp.serialize(s);
 
-  if(cartridge.has_gb_slot()) icd2.serialize(s);
   if(cartridge.has_bs_cart()) bsxcartridge.serialize(s);
   if(cartridge.has_event()) event.serialize(s);
   if(cartridge.has_sa1()) sa1.serialize(s);

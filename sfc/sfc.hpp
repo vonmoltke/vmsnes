@@ -24,7 +24,6 @@ namespace SuperFamicom {
 */
 
 #include <libco/libco.h>
-#include <gb/gb.hpp>
 
 namespace SuperFamicom {
   struct Thread {

@@ -3,7 +3,6 @@ struct Coprocessor : Thread {
   alwaysinline void synchronize_cpu();
 };
 
-#include <sfc/chip/icd2/icd2.hpp>
 #include <sfc/chip/bsx/bsx.hpp>
 #include <sfc/chip/nss/nss.hpp>
 #include <sfc/chip/event/event.hpp>

@@ -10,7 +10,6 @@ struct Cartridge : property<Cartridge> {
     SufamiTurbo,
     SufamiTurboA,
     SufamiTurboB,
-    GameBoy,
   };
 
   MappedRAM rom;
@@ -63,7 +62,6 @@ struct Cartridge : property<Cartridge> {
   struct Information {
     struct Markup {
       string cartridge;
-      string gameBoy;
       string satellaview;
       string sufamiTurboA;
       string sufamiTurboB;
@@ -71,7 +69,6 @@ struct Cartridge : property<Cartridge> {
 
     struct Title {
       string cartridge;
-      string gameBoy;
       string satellaview;
       string sufamiTurboA;
       string sufamiTurboB;
@@ -88,7 +85,6 @@ struct Cartridge : property<Cartridge> {
   ~Cartridge();
 
 private:
-  void load_super_game_boy();
   void load_satellaview();
   void load_sufami_turbo_a();
   void load_sufami_turbo_b();
@@ -98,7 +94,6 @@ private:
   void parse_markup_memory(MappedRAM&, Markup::Node, unsigned id, bool writable);
 
   void parse_markup_cartridge(Markup::Node);
-  void parse_markup_icd2(Markup::Node);
   void parse_markup_bsx(Markup::Node);
   void parse_markup_satellaview(Markup::Node);
   void parse_markup_sufamiturbo(Markup::Node, bool slot);

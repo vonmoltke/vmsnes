@@ -65,7 +65,6 @@ void System::init() {
   assert(interface != nullptr);
 
   satellaviewbaseunit.init();
-  icd2.init();
   bsxcartridge.init();
   nss.init();
   event.init();
@@ -120,7 +119,6 @@ void System::load() {
   ppu.enable();
 
   if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.load();
-  if(cartridge.has_gb_slot()) icd2.load();
   if(cartridge.has_bs_cart()) bsxcartridge.load();
   if(cartridge.has_nss_dip()) nss.load();
   if(cartridge.has_event()) event.load();
@@ -143,7 +141,6 @@ void System::load() {
 
 void System::unload() {
   if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.unload();
-  if(cartridge.has_gb_slot()) icd2.unload();
   if(cartridge.has_bs_cart()) bsxcartridge.unload();
   if(cartridge.has_nss_dip()) nss.unload();
   if(cartridge.has_event()) event.unload();
@@ -171,7 +168,6 @@ void System::power() {
   ppu.power();
 
   if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.power();
-  if(cartridge.has_gb_slot()) icd2.power();
   if(cartridge.has_bs_cart()) bsxcartridge.power();
   if(cartridge.has_nss_dip()) nss.power();
   if(cartridge.has_event()) event.power();
@@ -198,7 +194,6 @@ void System::reset() {
   ppu.reset();
 
   if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.reset();
-  if(cartridge.has_gb_slot()) icd2.reset();
   if(cartridge.has_bs_cart()) bsxcartridge.reset();
   if(cartridge.has_nss_dip()) nss.reset();
   if(cartridge.has_event()) event.reset();
@@ -215,7 +210,6 @@ void System::reset() {
   if(cartridge.has_msu1()) msu1.reset();
   if(cartridge.has_bs_slot()) satellaviewcartridge.reset();
 
-  if(cartridge.has_gb_slot()) cpu.coprocessors.append(&icd2);
   if(cartridge.has_event()) cpu.coprocessors.append(&event);
   if(cartridge.has_sa1()) cpu.coprocessors.append(&sa1);
   if(cartridge.has_superfx()) cpu.coprocessors.append(&superfx);
