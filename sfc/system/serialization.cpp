@@ -1,54 +1,48 @@
-#ifdef SYSTEM_CPP
+auto System::serialize() -> serializer {
+  serializer s(serializeSize);
 
-serializer System::serialize() {
-  serializer s(serialize_size);
-
-  unsigned signature = 0x31545342, version = Info::SerializerVersion;
-  char hash[64], description[512], profile[16];
-  memcpy(&hash, (const char*)cartridge.sha256(), 64);
-  memset(&description, 0, sizeof description);
-  memset(&profile, 0, sizeof profile);
-  strcpy(profile, Emulator::Profile);
+  uint signature = 0x31545342;
+  char version[16] = {0};
+  char hash[64] = {0};
+  char description[512] = {0};
+  memory::copy(&version, (const char*)Emulator::SerializerVersion, Emulator::SerializerVersion.size());
+  memory::copy(&hash, (const char*)cartridge.sha256(), 64);
 
   s.integer(signature);
-  s.integer(version);
+  s.array(version);
   s.array(hash);
   s.array(description);
-  s.array(profile);
 
-  serialize_all(s);
+  serializeAll(s);
   return s;
 }
 
-bool System::unserialize(serializer& s) {
-  unsigned signature, version;
-  char hash[64], description[512], profile[16];
+auto System::unserialize(serializer& s) -> bool {
+  uint signature = 0;
+  char version[16] = {0};
+  char hash[64] = {0};
+  char description[512] = {0};
 
   s.integer(signature);
-  s.integer(version);
+  s.array(version);
   s.array(hash);
   s.array(description);
-  s.array(profile);
 
   if(signature != 0x31545342) return false;
-  if(version != Info::SerializerVersion) return false;
-  if(strcmp(profile, Emulator::Profile)) return false;
+  if(string{version} != Emulator::SerializerVersion) return false;
 
   power();
-  serialize_all(s);
+  serializeAll(s);
   return true;
 }
 
-//========
 //internal
-//========
 
-void System::serialize(serializer& s) {
-  s.integer((unsigned&)region);
-  s.integer((unsigned&)expansion);
+auto System::serialize(serializer& s) -> void {
+  s.integer((uint&)information.region);
 }
 
-void System::serialize_all(serializer& s) {
+auto System::serializeAll(serializer& s) -> void {
   cartridge.serialize(s);
   system.serialize(s);
   random.serialize(s);
@@ -57,39 +51,40 @@ void System::serialize_all(serializer& s) {
   ppu.serialize(s);
   dsp.serialize(s);
 
-  if(cartridge.has_bs_cart()) bsxcartridge.serialize(s);
-  if(cartridge.has_event()) event.serialize(s);
-  if(cartridge.has_sa1()) sa1.serialize(s);
-  if(cartridge.has_superfx()) superfx.serialize(s);
-  if(cartridge.has_armdsp()) armdsp.serialize(s);
-  if(cartridge.has_hitachidsp()) hitachidsp.serialize(s);
-  if(cartridge.has_necdsp()) necdsp.serialize(s);
-  if(cartridge.has_epsonrtc()) epsonrtc.serialize(s);
-  if(cartridge.has_sharprtc()) sharprtc.serialize(s);
-  if(cartridge.has_spc7110()) spc7110.serialize(s);
-  if(cartridge.has_sdd1()) sdd1.serialize(s);
-  if(cartridge.has_obc1()) obc1.serialize(s);
-  if(cartridge.has_msu1()) msu1.serialize(s);
-  if(cartridge.has_st_slots()) sufamiturboA.serialize(s), sufamiturboB.serialize(s);
+  if(cartridge.has.ICD2) icd2.serialize(s);
+  if(cartridge.has.MCC) mcc.serialize(s);
+  if(cartridge.has.Event) event.serialize(s);
+  if(cartridge.has.SA1) sa1.serialize(s);
+  if(cartridge.has.SuperFX) superfx.serialize(s);
+  if(cartridge.has.ARMDSP) armdsp.serialize(s);
+  if(cartridge.has.HitachiDSP) hitachidsp.serialize(s);
+  if(cartridge.has.NECDSP) necdsp.serialize(s);
+  if(cartridge.has.EpsonRTC) epsonrtc.serialize(s);
+  if(cartridge.has.SharpRTC) sharprtc.serialize(s);
+  if(cartridge.has.SPC7110) spc7110.serialize(s);
+  if(cartridge.has.SDD1) sdd1.serialize(s);
+  if(cartridge.has.OBC1) obc1.serialize(s);
+  if(cartridge.has.MSU1) msu1.serialize(s);
+
+  if(cartridge.has.SufamiTurboSlots) sufamiturboA.serialize(s), sufamiturboB.serialize(s);
 }
 
 //perform dry-run state save:
 //determines exactly how many bytes are needed to save state for this cartridge,
 //as amount varies per game (eg different RAM sizes, special chips, etc.)
-void System::serialize_init() {
+auto System::serializeInit() -> void {
   serializer s;
 
-  unsigned signature = 0, version = 0;
-  char hash[64], profile[16], description[512];
+  uint signature = 0;
+  char version[16] = {0};
+  char hash[64] = {0};
+  char description[512] = {0};
 
   s.integer(signature);
-  s.integer(version);
+  s.array(version);
   s.array(hash);
-  s.array(profile);
   s.array(description);
 
-  serialize_all(s);
-  serialize_size = s.size();
+  serializeAll(s);
+  serializeSize = s.size();
 }
-
-#endif

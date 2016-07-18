@@ -1,13 +1,13 @@
 #include "../tomoko.hpp"
 #include "hotkeys.cpp"
-InputManager* inputManager = nullptr;
+unique_pointer<InputManager> inputManager;
 
 auto InputMapping::bind() -> void {
   auto token = assignment.split("/");
   if(token.size() < 3) return unbind();
-  uint64_t id = token[0].decimal();
-  unsigned group = token[1].decimal();
-  unsigned input = token[2].decimal();
+  uint64 id = token[0].natural();
+  uint group = token[1].natural();
+  uint input = token[2].natural();
   string qualifier = token(3, "None");
 
   for(auto& device : inputManager->devices) {
@@ -22,9 +22,11 @@ auto InputMapping::bind() -> void {
     if(qualifier == "Rumble") this->qualifier = Qualifier::Rumble;
     break;
   }
+
+  settings[path].setValue(assignment);
 }
 
-auto InputMapping::bind(shared_pointer<HID::Device> device, unsigned group, unsigned input, int16 oldValue, int16 newValue) -> bool {
+auto InputMapping::bind(shared_pointer<HID::Device> device, uint group, uint input, int16 oldValue, int16 newValue) -> bool {
   if(device->isNull() || (device->isKeyboard() && device->group(group).input(input).name() == "Escape")) {
     return unbind(), true;
   }
@@ -42,8 +44,9 @@ auto InputMapping::bind(shared_pointer<HID::Device> device, unsigned group, unsi
     }
 
     if((device->isJoypad() && group == HID::Joypad::GroupID::Axis)
-    || (device->isJoypad() && group == HID::Joypad::GroupID::Hat)) {
-      if(newValue < -16384) {
+    || (device->isJoypad() && group == HID::Joypad::GroupID::Hat)
+    || (device->isJoypad() && group == HID::Joypad::GroupID::Trigger)) {
+      if(newValue < -16384 && group != HID::Joypad::GroupID::Trigger) {  //triggers are always hi
         this->assignment = {encoding, "/Lo"};
         return bind(), true;
       }
@@ -69,7 +72,7 @@ auto InputMapping::bind(shared_pointer<HID::Device> device, unsigned group, unsi
   if(isRumble()) {
     if(device->isJoypad() && group == HID::Joypad::GroupID::Button) {
       if(newValue) {
-        encoding = {this->assignment, "/Rumble"};
+        this->assignment = {encoding, "/Rumble"};
         return bind(), true;
       }
     }
@@ -87,7 +90,8 @@ auto InputMapping::poll() -> int16 {
     if(device->isMouse() && group == HID::Mouse::GroupID::Button) return value != 0;
     if(device->isJoypad() && group == HID::Joypad::GroupID::Button) return value != 0;
     if((device->isJoypad() && group == HID::Joypad::GroupID::Axis)
-    || (device->isJoypad() && group == HID::Joypad::GroupID::Hat)) {
+    || (device->isJoypad() && group == HID::Joypad::GroupID::Hat)
+    || (device->isJoypad() && group == HID::Joypad::GroupID::Trigger)) {
       if(qualifier == Qualifier::Lo) return value < -16384;
       if(qualifier == Qualifier::Hi) return value > +16384;
     }
@@ -102,19 +106,28 @@ auto InputMapping::poll() -> int16 {
   return 0;
 }
 
+auto InputMapping::rumble(bool enable) -> void {
+  if(!device) return;
+  ::input->rumble(device->id(), enable);
+}
+
 auto InputMapping::unbind() -> void {
-  this->assignment = "None";
-  this->device = nullptr;
-  this->group = 0;
-  this->input = 0;
-  this->qualifier = Qualifier::None;
+  assignment = "None";
+  device = nullptr;
+  group = 0;
+  input = 0;
+  qualifier = Qualifier::None;
+  settings[path].setValue(assignment);
 }
 
 auto InputMapping::assignmentName() -> string {
   if(!device) return "None";
   string path;
   path.append(device->name());
-  path.append(".", device->group(group).name());
+  if(device->name() != "Keyboard") {
+    //keyboards only have one group; no need to append group name
+    path.append(".", device->group(group).name());
+  }
   path.append(".", device->group(group).input(input).name());
   if(qualifier == Qualifier::Lo) path.append(".Lo");
   if(qualifier == Qualifier::Hi) path.append(".Hi");
@@ -133,47 +146,42 @@ InputManager::InputManager() {
   inputManager = this;
 
   for(auto& emulator : program->emulators) {
-    Configuration::Node nodeEmulator;
-
-    emulators.append(InputEmulator());
-    auto& inputEmulator = emulators.last();
+    auto& inputEmulator = emulators(emulators.size());
+    inputEmulator.interface = emulator;
     inputEmulator.name = emulator->information.name;
 
-    for(auto& port : emulator->port) {
-      Configuration::Node nodePort;
-
-      inputEmulator.ports.append(InputPort());
-      auto& inputPort = inputEmulator.ports.last();
+    for(auto& port : emulator->ports) {
+      auto& inputPort = inputEmulator.ports(port.id);
       inputPort.name = port.name;
-      for(auto& device : port.device) {
-        Configuration::Node nodeDevice;
-
-        inputPort.devices.append(InputDevice());
-        auto& inputDevice = inputPort.devices.last();
+      for(auto& device : port.devices) {
+        auto& inputDevice = inputPort.devices(device.id);
         inputDevice.name = device.name;
-        for(auto number : device.order) {
-          auto& input = device.input[number];
-          inputDevice.mappings.append(new InputMapping());
-          auto& inputMapping = inputDevice.mappings.last();
-          inputMapping->name = input.name;
-          inputMapping->link = &input;
-          input.guid = (uintptr_t)inputMapping;
+        for(auto& input : device.inputs) {
+          auto& inputMapping = inputDevice.mappings(inputDevice.mappings.size());
+          inputMapping.name = input.name;
+          inputMapping.type = input.type;
 
-          nodeDevice.append(inputMapping->assignment, inputMapping->name);
+          inputMapping.path = string{inputEmulator.name, "/", inputPort.name, "/", inputDevice.name, "/", inputMapping.name}.replace(" ", "");
+          inputMapping.assignment = settings(inputMapping.path).text();
+          inputMapping.bind();
         }
-
-        nodePort.append(nodeDevice, string{inputDevice.name}.replace(" ", ""));
       }
-
-      nodeEmulator.append(nodePort, string{inputPort.name}.replace(" ", ""));
     }
-
-    config.append(nodeEmulator, string{inputEmulator.name}.replace(" ", ""));
   }
 
   appendHotkeys();
-  config.load(locate({configpath(), "tomoko/"}, "input.bml"));
-  config.save(locate({configpath(), "tomoko/"}, "input.bml"));
+}
+
+//Emulator::Interface::inputPoll() needs to call into InputManager::InputEmulator
+//this function is calling during Program::loadMedium() to link the two together
+auto InputManager::bind(Emulator::Interface* interface) -> void {
+  this->emulator = nullptr;
+  for(auto& emulator : emulators) {
+    if(emulator.interface == interface) {
+      this->emulator = &emulator;
+    }
+  }
+  assert(this->emulator != nullptr);
 }
 
 auto InputManager::bind() -> void {
@@ -181,7 +189,7 @@ auto InputManager::bind() -> void {
     for(auto& port : emulator.ports) {
       for(auto& device : port.devices) {
         for(auto& mapping : device.mappings) {
-          mapping->bind();
+          mapping.bind();
         }
       }
     }
@@ -195,13 +203,13 @@ auto InputManager::bind() -> void {
 auto InputManager::poll() -> void {
   auto devices = input->poll();
   bool changed = devices.size() != this->devices.size();
-  if(changed == false) {
+  if(!changed) {
     for(auto n : range(devices)) {
       changed = devices[n] != this->devices[n];
       if(changed) break;
     }
   }
-  if(changed == true) {
+  if(changed) {
     this->devices = devices;
     bind();
   }
@@ -209,7 +217,7 @@ auto InputManager::poll() -> void {
   if(presentation && presentation->focused()) pollHotkeys();
 }
 
-auto InputManager::onChange(shared_pointer<HID::Device> device, unsigned group, unsigned input, int16 oldValue, int16 newValue) -> void {
+auto InputManager::onChange(shared_pointer<HID::Device> device, uint group, uint input, int16_t oldValue, int16_t newValue) -> void {
   if(settingsManager->focused()) {
     settingsManager->input.inputEvent(device, group, input, oldValue, newValue);
     settingsManager->hotkeys.inputEvent(device, group, input, oldValue, newValue);
@@ -217,7 +225,6 @@ auto InputManager::onChange(shared_pointer<HID::Device> device, unsigned group, 
 }
 
 auto InputManager::quit() -> void {
-  config.save(locate({configpath(), "tomoko/"}, "input.bml"));
   emulators.reset();
   hotkeys.reset();
 }

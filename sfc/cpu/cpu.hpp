@@ -1,100 +1,159 @@
-struct CPU : Processor::R65816, Thread, public PPUcounter {
-  uint8 wram[128 * 1024];
+struct CPU : Processor::R65816, Thread, PPUcounter {
+  auto interruptPending() const -> bool override;
+  auto pio() const -> uint8;
+  auto joylatch() const -> bool;
 
-  enum : bool { Threaded = true };
-  vector<Thread*> coprocessors;
-  alwaysinline void step(unsigned clocks);
-  alwaysinline void synchronize_smp();
-  void synchronize_ppu();
-  void synchronize_coprocessors();
-  void synchronize_controllers();
-
-  uint8 port_read(uint2 port) const;
-  void port_write(uint2 port, uint8 data);
-
-  uint8 pio();
-  bool joylatch();
-  alwaysinline bool interrupt_pending() { return status.interrupt_pending; }
-
-  void enter();
-  void enable();
-  void power();
-  void reset();
-
-  void serialize(serializer&);
   CPU();
-  ~CPU();
+
+  auto synchronizeSMP() -> void;
+  auto synchronizePPU() -> void;
+  auto synchronizeCoprocessors() -> void;
+  auto synchronizePeripherals() -> void;
+
+  auto readPort(uint2 port) const -> uint8;
+  auto writePort(uint2 port, uint8 data) -> void;
+
+  static auto Enter() -> void;
+  auto main() -> void;
+  auto load(Markup::Node) -> bool;
+  auto power() -> void;
+  auto reset() -> void;
+
+  //dma.cpp
+  auto dmaStep(uint clocks) -> void;
+  auto dmaTransferValid(uint8 bbus, uint24 abus) -> bool;
+  auto dmaAddressValid(uint24 abus) -> bool;
+  auto dmaRead(uint24 abus) -> uint8;
+  auto dmaWrite(bool valid, uint addr = 0, uint8 data = 0) -> void;
+  auto dmaTransfer(bool direction, uint8 bbus, uint24 abus) -> void;
+
+  inline auto dmaAddressB(uint n, uint channel) -> uint8;
+  inline auto dmaAddress(uint n) -> uint24;
+  inline auto hdmaAddress(uint n) -> uint24;
+  inline auto hdmaIndirectAddress(uint n) -> uint24;
+
+  inline auto dmaEnabledChannels() -> uint;
+  inline auto hdmaActive(uint n) -> bool;
+  inline auto hdmaActiveAfter(uint s) -> bool;
+  inline auto hdmaEnabledChannels() -> uint;
+  inline auto hdmaActiveChannels() -> uint;
+
+  auto dmaRun() -> void;
+  auto hdmaUpdate(uint n) -> void;
+  auto hdmaRun() -> void;
+  auto hdmaInitReset() -> void;
+  auto hdmaInit() -> void;
+
+  //memory.cpp
+  auto idle() -> void override;
+  auto read(uint24 addr) -> uint8 override;
+  auto write(uint24 addr, uint8 data) -> void override;
+  alwaysinline auto speed(uint24 addr) const -> uint;
+  auto readDisassembler(uint24 addr) -> uint8 override;
+
+  //io.cpp
+  auto readAPU(uint24 addr, uint8 data) -> uint8;
+  auto readCPU(uint24 addr, uint8 data) -> uint8;
+  auto readDMA(uint24 addr, uint8 data) -> uint8;
+  auto writeAPU(uint24 addr, uint8 data) -> void;
+  auto writeCPU(uint24 addr, uint8 data) -> void;
+  auto writeDMA(uint24 addr, uint8 data) -> void;
+
+  //timing.cpp
+  auto dmaCounter() const -> uint;
+
+  auto step(uint clocks) -> void;
+  auto scanline() -> void;
+
+  alwaysinline auto aluEdge() -> void;
+  alwaysinline auto dmaEdge() -> void;
+  alwaysinline auto lastCycle() -> void;
+
+  //irq.cpp
+  alwaysinline auto pollInterrupts() -> void;
+  auto nmitimenUpdate(uint8 data) -> void;
+  auto rdnmi() -> bool;
+  auto timeup() -> bool;
+
+  alwaysinline auto nmiTest() -> bool;
+  alwaysinline auto irqTest() -> bool;
+
+  //joypad.cpp
+  auto stepAutoJoypadPoll() -> void;
+
+  //serialization.cpp
+  auto serialize(serializer&) -> void;
+
+  uint8 wram[128 * 1024];
+  vector<Thread*> coprocessors;
+  vector<Thread*> peripherals;
 
 privileged:
-  unsigned cpu_version = 2;  //allowed: 1, 2
-
-  #include "dma/dma.hpp"
-  #include "memory/memory.hpp"
-  #include "mmio/mmio.hpp"
-  #include "timing/timing.hpp"
+  uint version = 2;  //allowed: 1, 2
 
   struct Status {
-    bool interrupt_pending;
+    bool interruptPending;
 
-    unsigned clock_count;
-    unsigned line_clocks;
+    uint clockCount;
+    uint lineClocks;
 
     //timing
-    bool irq_lock;
+    bool irqLock;
 
-    unsigned dram_refresh_position;
-    bool dram_refreshed;
+    uint dramRefreshPosition;
+    bool dramRefreshed;
 
-    unsigned hdma_init_position;
-    bool hdma_init_triggered;
+    uint hdmaInitPosition;
+    bool hdmaInitTriggered;
 
-    unsigned hdma_position;
-    bool hdma_triggered;
+    uint hdmaPosition;
+    bool hdmaTriggered;
 
-    bool nmi_valid;
-    bool nmi_line;
-    bool nmi_transition;
-    bool nmi_pending;
-    bool nmi_hold;
+    bool nmiValid;
+    bool nmiLine;
+    bool nmiTransition;
+    bool nmiPending;
+    bool nmiHold;
 
-    bool irq_valid;
-    bool irq_line;
-    bool irq_transition;
-    bool irq_pending;
-    bool irq_hold;
+    bool irqValid;
+    bool irqLine;
+    bool irqTransition;
+    bool irqPending;
+    bool irqHold;
 
-    bool reset_pending;
+    bool powerPending;
+    bool resetPending;
 
     //DMA
-    bool dma_active;
-    unsigned dma_counter;
-    unsigned dma_clocks;
-    bool dma_pending;
-    bool hdma_pending;
-    bool hdma_mode;  //0 = init, 1 = run
+    bool dmaActive;
+    uint dmaCounter;
+    uint dmaClocks;
+    bool dmaPending;
+    bool hdmaPending;
+    bool hdmaMode;  //0 = init, 1 = run
 
     //auto joypad polling
-    bool auto_joypad_active;
-    bool auto_joypad_latch;
-    unsigned auto_joypad_counter;
-    unsigned auto_joypad_clock;
+    bool autoJoypadActive;
+    bool autoJoypadLatch;
+    uint autoJoypadCounter;
+    uint autoJoypadClock;
+  } status;
 
-    //MMIO
+  struct IO {
     //$2140-217f
     uint8 port[4];
 
     //$2181-$2183
-    uint17 wram_addr;
+    uint17 wramAddress;
 
     //$4016-$4017
-    bool joypad_strobe_latch;
-    uint32 joypad1_bits;
-    uint32 joypad2_bits;
+    bool joypadStrobeLatch;
 
     //$4200
-    bool nmi_enabled;
-    bool hirq_enabled, virq_enabled;
-    bool auto_joypad_poll;
+    bool nmiEnabled;
+    bool hirqEnabled;
+    bool virqEnabled;
+    bool autoJoypadPoll;
 
     //$4201
     uint8 pio;
@@ -108,11 +167,11 @@ privileged:
     uint8 wrdivb;
 
     //$4207-$420a
-    uint9 hirq_pos;
-    uint9 virq_pos;
+    uint9 hirqPos;
+    uint9 virqPos;
 
     //$420d
-    unsigned rom_speed;
+    uint romSpeed;
 
     //$4214-$4217
     uint16 rddiv;
@@ -123,24 +182,68 @@ privileged:
     uint16 joy2;
     uint16 joy3;
     uint16 joy4;
-  } status;
+  } io;
 
   struct ALU {
-    unsigned mpyctr;
-    unsigned divctr;
-    unsigned shift;
+    uint mpyctr;
+    uint divctr;
+    uint shift;
   } alu;
 
-  static void Enter();
-  void op_step();
+  struct Channel {
+    //$420b
+    bool dmaEnabled;
 
-  struct Debugger {
-    hook<void (uint24)> op_exec;
-    hook<void (uint24, uint8)> op_read;
-    hook<void (uint24, uint8)> op_write;
-    hook<void ()> op_nmi;
-    hook<void ()> op_irq;
-  } debugger;
+    //$420c
+    bool hdmaEnabled;
+
+    //$43x0
+    bool direction;
+    bool indirect;
+    bool unused;
+    bool reverseTransfer;
+    bool fixedTransfer;
+    uint3 transferMode;
+
+    //$43x1
+    uint8 targetAddress;
+
+    //$43x2-$43x3
+    uint16 sourceAddress;
+
+    //$43x4
+    uint8 sourceBank;
+
+    //$43x5-$43x6
+    union {
+      uint16 transferSize;
+      uint16 indirectAddress;
+    };
+
+    //$43x7
+    uint8 indirectBank;
+
+    //$43x8-$43x9
+    uint16 hdmaAddress;
+
+    //$43xa
+    uint8 lineCounter;
+
+    //$43xb/$43xf
+    uint8 unknown;
+
+    //internal state
+    bool hdmaCompleted;
+    bool hdmaDoTransfer;
+
+    Channel() : transferSize(0) {}
+  } channel[8];
+
+  struct Pipe {
+    bool valid;
+    uint addr;
+    uint8 data;
+  } pipe;
 };
 
 extern CPU cpu;

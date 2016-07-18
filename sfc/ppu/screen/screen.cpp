@@ -1,141 +1,140 @@
-#ifdef PPU_CPP
-
-void PPU::Screen::scanline() {
-  output = self.output + self.vcounter() * 1024;
-  if(self.display.interlace && self.field()) output += 512;
+auto PPU::Screen::scanline() -> void {
+  lineA = ppu.output + ppu.vcounter() * 1024;
+  lineB = lineA + (ppu.display.interlace ? 0 : 512);
+  if(ppu.display.interlace && ppu.field()) lineA += 512, lineB += 512;
 
   //the first hires pixel of each scanline is transparent
   //note: exact value initializations are not confirmed on hardware
-  math.main.color = get_color(0);
-  math.sub.color  = math.main.color;
+  math.above.color = paletteColor(0);
+  math.below.color = math.above.color;
 
-  math.main.color_enable = !(self.window.regs.col_main_mask & 1);
-  math.sub.color_enable  = !(self.window.regs.col_sub_mask  & 1) && regs.back_color_enable;
+  math.above.colorEnable = !(ppu.window.io.col.aboveMask & 1);
+  math.below.colorEnable = !(ppu.window.io.col.belowMask & 1) && io.back.colorEnable;
 
   math.transparent = true;
-  math.addsub_mode = false;
-  math.color_halve = regs.color_halve && !regs.addsub_mode && math.main.color_enable;
+  math.blendMode   = false;
+  math.colorHalve  = io.colorHalve && !io.blendMode && math.above.colorEnable;
 }
 
-void PPU::Screen::run() {
+auto PPU::Screen::run() -> void {
   if(ppu.vcounter() == 0) return;
 
-  bool hires   = self.regs.pseudo_hires || self.regs.bgmode == 5 || self.regs.bgmode == 6;
-  auto sscolor = get_pixel_sub(hires);
-  auto mscolor = get_pixel_main();
+  bool hires      = ppu.io.pseudoHires || ppu.io.bgMode == 5 || ppu.io.bgMode == 6;
+  auto belowColor = below(hires);
+  auto aboveColor = above();
 
-  *output++ = (self.regs.display_brightness << 15) | (hires ? sscolor : mscolor);
-  *output++ = (self.regs.display_brightness << 15) | (mscolor);
+  *lineA++ = *lineB++ = ppu.io.displayBrightness << 15 | (hires ? belowColor : aboveColor);
+  *lineA++ = *lineB++ = ppu.io.displayBrightness << 15 | (aboveColor);
 }
 
-uint16 PPU::Screen::get_pixel_sub(bool hires) {
-  if(self.regs.display_disable || (!self.regs.overscan && self.vcounter() >= 225)) return 0;
+auto PPU::Screen::below(bool hires) -> uint16 {
+  if(ppu.io.displayDisable || (!ppu.io.overscan && ppu.vcounter() >= 225)) return 0;
 
-  unsigned priority = 0;
-  if(self.bg1.output.sub.priority) {
-    priority = self.bg1.output.sub.priority;
-    if(regs.direct_color && (self.regs.bgmode == 3 || self.regs.bgmode == 4 || self.regs.bgmode == 7)) {
-      math.sub.color = get_direct_color(self.bg1.output.sub.palette, self.bg1.output.sub.tile);
+  uint priority = 0;
+  if(ppu.bg1.output.below.priority) {
+    priority = ppu.bg1.output.below.priority;
+    if(io.directColor && (ppu.io.bgMode == 3 || ppu.io.bgMode == 4 || ppu.io.bgMode == 7)) {
+      math.below.color = directColor(ppu.bg1.output.below.palette, ppu.bg1.output.below.tile);
     } else {
-      math.sub.color = get_color(self.bg1.output.sub.palette);
+      math.below.color = paletteColor(ppu.bg1.output.below.palette);
     }
   }
-  if(self.bg2.output.sub.priority > priority) {
-    priority = self.bg2.output.sub.priority;
-    math.sub.color = get_color(self.bg2.output.sub.palette);
+  if(ppu.bg2.output.below.priority > priority) {
+    priority = ppu.bg2.output.below.priority;
+    math.below.color = paletteColor(ppu.bg2.output.below.palette);
   }
-  if(self.bg3.output.sub.priority > priority) {
-    priority = self.bg3.output.sub.priority;
-    math.sub.color = get_color(self.bg3.output.sub.palette);
+  if(ppu.bg3.output.below.priority > priority) {
+    priority = ppu.bg3.output.below.priority;
+    math.below.color = paletteColor(ppu.bg3.output.below.palette);
   }
-  if(self.bg4.output.sub.priority > priority) {
-    priority = self.bg4.output.sub.priority;
-    math.sub.color = get_color(self.bg4.output.sub.palette);
+  if(ppu.bg4.output.below.priority > priority) {
+    priority = ppu.bg4.output.below.priority;
+    math.below.color = paletteColor(ppu.bg4.output.below.palette);
   }
-  if(self.sprite.output.sub.priority > priority) {
-    priority = self.sprite.output.sub.priority;
-    math.sub.color = get_color(self.sprite.output.sub.palette);
+  if(ppu.obj.output.below.priority > priority) {
+    priority = ppu.obj.output.below.priority;
+    math.below.color = paletteColor(ppu.obj.output.below.palette);
   }
-  if(math.transparent = (priority == 0)) math.sub.color = get_color(0);
+  if(math.transparent = (priority == 0)) math.below.color = paletteColor(0);
 
   if(!hires) return 0;
-  if(!math.sub.color_enable) return math.main.color_enable ? math.sub.color : 0;
+  if(!math.below.colorEnable) return math.above.colorEnable ? math.below.color : (uint15)0;
 
-  return addsub(
-    math.main.color_enable ? math.sub.color : 0,
-    math.addsub_mode ? math.main.color : fixed_color()
+  return blend(
+    math.above.colorEnable ? math.below.color : (uint15)0,
+    math.blendMode ? math.above.color : fixedColor()
   );
 }
 
-uint16 PPU::Screen::get_pixel_main() {
-  if(self.regs.display_disable || (!self.regs.overscan && self.vcounter() >= 225)) return 0;
+auto PPU::Screen::above() -> uint16 {
+  if(ppu.io.displayDisable || (!ppu.io.overscan && ppu.vcounter() >= 225)) return 0;
 
-  unsigned priority = 0;
-  if(self.bg1.output.main.priority) {
-    priority = self.bg1.output.main.priority;
-    if(regs.direct_color && (self.regs.bgmode == 3 || self.regs.bgmode == 4 || self.regs.bgmode == 7)) {
-      math.main.color = get_direct_color(self.bg1.output.main.palette, self.bg1.output.main.tile);
+  uint priority = 0;
+  if(ppu.bg1.output.above.priority) {
+    priority = ppu.bg1.output.above.priority;
+    if(io.directColor && (ppu.io.bgMode == 3 || ppu.io.bgMode == 4 || ppu.io.bgMode == 7)) {
+      math.above.color = directColor(ppu.bg1.output.above.palette, ppu.bg1.output.above.tile);
     } else {
-      math.main.color = get_color(self.bg1.output.main.palette);
+      math.above.color = paletteColor(ppu.bg1.output.above.palette);
     }
-    math.sub.color_enable = regs.bg1_color_enable;
+    math.below.colorEnable = io.bg1.colorEnable;
   }
-  if(self.bg2.output.main.priority > priority) {
-    priority = self.bg2.output.main.priority;
-    math.main.color = get_color(self.bg2.output.main.palette);
-    math.sub.color_enable = regs.bg2_color_enable;
+  if(ppu.bg2.output.above.priority > priority) {
+    priority = ppu.bg2.output.above.priority;
+    math.above.color = paletteColor(ppu.bg2.output.above.palette);
+    math.below.colorEnable = io.bg2.colorEnable;
   }
-  if(self.bg3.output.main.priority > priority) {
-    priority = self.bg3.output.main.priority;
-    math.main.color = get_color(self.bg3.output.main.palette);
-    math.sub.color_enable = regs.bg3_color_enable;
+  if(ppu.bg3.output.above.priority > priority) {
+    priority = ppu.bg3.output.above.priority;
+    math.above.color = paletteColor(ppu.bg3.output.above.palette);
+    math.below.colorEnable = io.bg3.colorEnable;
   }
-  if(self.bg4.output.main.priority > priority) {
-    priority = self.bg4.output.main.priority;
-    math.main.color = get_color(self.bg4.output.main.palette);
-    math.sub.color_enable = regs.bg4_color_enable;
+  if(ppu.bg4.output.above.priority > priority) {
+    priority = ppu.bg4.output.above.priority;
+    math.above.color = paletteColor(ppu.bg4.output.above.palette);
+    math.below.colorEnable = io.bg4.colorEnable;
   }
-  if(self.sprite.output.main.priority > priority) {
-    priority = self.sprite.output.main.priority;
-    math.main.color = get_color(self.sprite.output.main.palette);
-    math.sub.color_enable = regs.oam_color_enable && self.sprite.output.main.palette >= 192;
+  if(ppu.obj.output.above.priority > priority) {
+    priority = ppu.obj.output.above.priority;
+    math.above.color = paletteColor(ppu.obj.output.above.palette);
+    math.below.colorEnable = io.obj.colorEnable && ppu.obj.output.above.palette >= 192;
   }
   if(priority == 0) {
-    math.main.color = get_color(0);
-    math.sub.color_enable = regs.back_color_enable;
+    math.above.color = paletteColor(0);
+    math.below.colorEnable = io.back.colorEnable;
   }
 
-  if(!self.window.output.sub.color_enable) math.sub.color_enable = false;
-  math.main.color_enable = self.window.output.main.color_enable;
-  if(!math.sub.color_enable) return math.main.color_enable ? math.main.color : 0;
+  if(!ppu.window.output.below.colorEnable) math.below.colorEnable = false;
+  math.above.colorEnable = ppu.window.output.above.colorEnable;
+  if(!math.below.colorEnable) return math.above.colorEnable ? math.above.color : (uint15)0;
 
-  if(regs.addsub_mode && math.transparent) {
-    math.addsub_mode = false;
-    math.color_halve = false;
+  if(io.blendMode && math.transparent) {
+    math.blendMode  = false;
+    math.colorHalve = false;
   } else {
-    math.addsub_mode = regs.addsub_mode;
-    math.color_halve = regs.color_halve && math.main.color_enable;
+    math.blendMode  = io.blendMode;
+    math.colorHalve = io.colorHalve && math.above.colorEnable;
   }
 
-  return addsub(
-    math.main.color_enable ? math.main.color : 0,
-    math.addsub_mode ? math.sub.color : fixed_color()
+  return blend(
+    math.above.colorEnable ? math.above.color : (uint15)0,
+    math.blendMode ? math.below.color : fixedColor()
   );
 }
 
-uint16 PPU::Screen::addsub(unsigned x, unsigned y) {
-  if(!regs.color_mode) {
-    if(!math.color_halve) {
-      unsigned sum = x + y;
-      unsigned carry = (sum - ((x ^ y) & 0x0421)) & 0x8420;
+auto PPU::Screen::blend(uint x, uint y) const -> uint15 {
+  if(!io.colorMode) {
+    if(!math.colorHalve) {
+      uint sum = x + y;
+      uint carry = (sum - ((x ^ y) & 0x0421)) & 0x8420;
       return (sum - carry) | (carry - (carry >> 5));
     } else {
       return (x + y - ((x ^ y) & 0x0421)) >> 1;
     }
   } else {
-    unsigned diff = x - y + 0x8420;
-    unsigned borrow = (diff - ((x ^ y) & 0x8420)) & 0x8420;
-    if(!math.color_halve) {
+    uint diff = x - y + 0x8420;
+    uint borrow = (diff - ((x ^ y) & 0x8420)) & 0x8420;
+    if(!math.colorHalve) {
       return   (diff - borrow) & (borrow - (borrow >> 5));
     } else {
       return (((diff - borrow) & (borrow - (borrow >> 5))) & 0x7bde) >> 1;
@@ -143,13 +142,12 @@ uint16 PPU::Screen::addsub(unsigned x, unsigned y) {
   }
 }
 
-uint16 PPU::Screen::get_color(unsigned palette) {
-  palette <<= 1;
-  self.regs.cgram_iaddr = palette;
-  return ppu.cgram[palette + 0] + (ppu.cgram[palette + 1] << 8);
+auto PPU::Screen::paletteColor(uint8 palette) const -> uint15 {
+  ppu.latch.cgramAddress = palette;
+  return cgram[palette];
 }
 
-uint16 PPU::Screen::get_direct_color(unsigned palette, unsigned tile) {
+auto PPU::Screen::directColor(uint palette, uint tile) const -> uint15 {
   //palette = -------- BBGGGRRR
   //tile    = ---bgr-- --------
   //output  = 0BBb00GG Gg0RRRr0
@@ -158,27 +156,24 @@ uint16 PPU::Screen::get_direct_color(unsigned palette, unsigned tile) {
        + ((palette << 2) & 0x001c) + ((tile >> 9) & 0x0002);
 }
 
-uint16 PPU::Screen::fixed_color() const {
-  return (regs.color_b << 10) | (regs.color_g << 5) | (regs.color_r << 0);
+auto PPU::Screen::fixedColor() const -> uint15 {
+  return io.colorBlue << 10 | io.colorGreen << 5 | io.colorRed << 0;
 }
 
-void PPU::Screen::reset() {
-  regs.addsub_mode = random(false);
-  regs.direct_color = random(false);
-  regs.color_mode = random(false);
-  regs.color_halve = random(false);
-  regs.bg1_color_enable = random(false);
-  regs.bg2_color_enable = random(false);
-  regs.bg3_color_enable = random(false);
-  regs.bg4_color_enable = random(false);
-  regs.oam_color_enable = random(false);
-  regs.back_color_enable = random(false);
-  regs.color_r = random(0);
-  regs.color_g = random(0);
-  regs.color_b = random(0);
-}
+auto PPU::Screen::reset() -> void {
+  for(auto& n : cgram) n = random(0x0000);
 
-PPU::Screen::Screen(PPU& self) : self(self) {
+  io.blendMode = random(false);
+  io.directColor = random(false);
+  io.colorMode = random(false);
+  io.colorHalve = random(false);
+  io.bg1.colorEnable = random(false);
+  io.bg2.colorEnable = random(false);
+  io.bg3.colorEnable = random(false);
+  io.bg4.colorEnable = random(false);
+  io.obj.colorEnable = random(false);
+  io.back.colorEnable = random(false);
+  io.colorBlue = random(0);
+  io.colorGreen = random(0);
+  io.colorRed = random(0);
 }
-
-#endif

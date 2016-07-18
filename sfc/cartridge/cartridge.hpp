@@ -1,117 +1,128 @@
-struct Cartridge : property<Cartridge> {
-  enum class Region : unsigned {
-    NTSC,
-    PAL,
-  };
+struct Cartridge {
+  enum class Region : uint { NTSC, PAL };
 
-  enum class Slot : unsigned {
-    Base,
-    Bsx,
-    SufamiTurbo,
-    SufamiTurboA,
-    SufamiTurboB,
-  };
+  auto pathID() const -> uint { return information.pathID; }
+  auto sha256() const -> string { return information.sha256; }
+  auto region() const -> Region { return information.region; }
+  auto manifest() const -> string;
+  auto title() const -> string;
+
+  auto load() -> bool;
+  auto save() -> void;
+  auto unload() -> void;
+
+  auto serialize(serializer&) -> void;
 
   MappedRAM rom;
   MappedRAM ram;
 
-  readonly<bool> loaded;
-  readonly<string> sha256;
-
-  readonly<Region> region;
-
-  readonly<bool> has_gb_slot;
-  readonly<bool> has_bs_cart;
-  readonly<bool> has_bs_slot;
-  readonly<bool> has_st_slots;
-  readonly<bool> has_nss_dip;
-  readonly<bool> has_event;
-  readonly<bool> has_sa1;
-  readonly<bool> has_superfx;
-  readonly<bool> has_armdsp;
-  readonly<bool> has_hitachidsp;
-  readonly<bool> has_necdsp;
-  readonly<bool> has_epsonrtc;
-  readonly<bool> has_sharprtc;
-  readonly<bool> has_spc7110;
-  readonly<bool> has_sdd1;
-  readonly<bool> has_obc1;
-  readonly<bool> has_hsu1;
-  readonly<bool> has_msu1;
-
-  struct Mapping {
-    function<uint8 (unsigned)> reader;
-    function<void (unsigned, uint8)> writer;
-    string addr;
-    unsigned size;
-    unsigned base;
-    unsigned mask;
-
-    Mapping();
-    Mapping(const function<uint8 (unsigned)>&, const function<void (unsigned, uint8)>&);
-    Mapping(SuperFamicom::Memory&);
-  };
-  vector<Mapping> mapping;
-
-  struct Memory {
-    unsigned id;
-    string name;
-  };
-  vector<Memory> memory;
-
   struct Information {
-    struct Markup {
+    uint pathID = 0;
+    string sha256;
+    Region region = Region::NTSC;
+
+    struct Manifest {
       string cartridge;
-      string satellaview;
+      string gameBoy;
+      string bsMemory;
       string sufamiTurboA;
       string sufamiTurboB;
-    } markup;
+    } manifest;
 
     struct Title {
       string cartridge;
-      string satellaview;
+      string gameBoy;
+      string bsMemory;
       string sufamiTurboA;
       string sufamiTurboB;
     } title;
   } information;
 
-  string title();
+  struct Has {
+    boolean ICD2;
+    boolean MCC;
+    boolean NSSDIP;
+    boolean Event;
+    boolean SA1;
+    boolean SuperFX;
+    boolean ARMDSP;
+    boolean HitachiDSP;
+    boolean NECDSP;
+    boolean EpsonRTC;
+    boolean SharpRTC;
+    boolean SPC7110;
+    boolean SDD1;
+    boolean OBC1;
+    boolean MSU1;
 
-  void load();
-  void unload();
-
-  void serialize(serializer&);
-  Cartridge();
-  ~Cartridge();
+    boolean GameBoySlot;
+    boolean BSMemorySlot;
+    boolean SufamiTurboSlots;
+  } has;
 
 private:
-  void load_satellaview();
-  void load_sufami_turbo_a();
-  void load_sufami_turbo_b();
+  //cartridge.cpp
+  auto loadGameBoy() -> bool;
+  auto loadBSMemory() -> bool;
+  auto loadSufamiTurboA() -> bool;
+  auto loadSufamiTurboB() -> bool;
 
-  void parse_markup(const char*);
-  void parse_markup_map(Mapping&, Markup::Node);
-  void parse_markup_memory(MappedRAM&, Markup::Node, unsigned id, bool writable);
+  //load.cpp
+  auto loadCartridge(Markup::Node) -> void;
+  auto loadGameBoy(Markup::Node) -> void;
+  auto loadBSMemory(Markup::Node) -> void;
+  auto loadSufamiTurboA(Markup::Node) -> void;
+  auto loadSufamiTurboB(Markup::Node) -> void;
 
-  void parse_markup_cartridge(Markup::Node);
-  void parse_markup_bsx(Markup::Node);
-  void parse_markup_satellaview(Markup::Node);
-  void parse_markup_sufamiturbo(Markup::Node, bool slot);
-  void parse_markup_nss(Markup::Node);
-  void parse_markup_event(Markup::Node);
-  void parse_markup_sa1(Markup::Node);
-  void parse_markup_superfx(Markup::Node);
-  void parse_markup_armdsp(Markup::Node);
-  void parse_markup_hitachidsp(Markup::Node, unsigned roms);
-  void parse_markup_necdsp(Markup::Node);
-  void parse_markup_epsonrtc(Markup::Node);
-  void parse_markup_sharprtc(Markup::Node);
-  void parse_markup_spc7110(Markup::Node);
-  void parse_markup_sdd1(Markup::Node);
-  void parse_markup_obc1(Markup::Node);
-  void parse_markup_msu1(Markup::Node);
+  auto loadROM(Markup::Node) -> void;
+  auto loadRAM(Markup::Node) -> void;
+  auto loadICD2(Markup::Node) -> void;
+  auto loadMCC(Markup::Node) -> void;
+  auto loadBSMemoryPack(Markup::Node) -> void;
+  auto loadSufamiTurbo(Markup::Node, bool slot) -> void;
+  auto loadNSS(Markup::Node) -> void;
+  auto loadEvent(Markup::Node) -> void;
+  auto loadSA1(Markup::Node) -> void;
+  auto loadSuperFX(Markup::Node) -> void;
+  auto loadARMDSP(Markup::Node) -> void;
+  auto loadHitachiDSP(Markup::Node, uint roms) -> void;
+  auto loadNECDSP(Markup::Node) -> void;
+  auto loadEpsonRTC(Markup::Node) -> void;
+  auto loadSharpRTC(Markup::Node) -> void;
+  auto loadSPC7110(Markup::Node) -> void;
+  auto loadSDD1(Markup::Node) -> void;
+  auto loadOBC1(Markup::Node) -> void;
+  auto loadMSU1(Markup::Node) -> void;
+
+  auto loadMemory(MappedRAM&, Markup::Node, bool required, maybe<uint> id = nothing) -> void;
+  auto loadMap(Markup::Node, SuperFamicom::Memory&) -> void;
+  auto loadMap(Markup::Node, const function<uint8 (uint24, uint8)>&, const function<void (uint24, uint8)>&) -> void;
+
+  //save.cpp
+  auto saveCartridge(Markup::Node) -> void;
+  auto saveGameBoy(Markup::Node) -> void;
+  auto saveBSMemory(Markup::Node) -> void;
+  auto saveSufamiTurboA(Markup::Node) -> void;
+  auto saveSufamiTurboB(Markup::Node) -> void;
+
+  auto saveRAM(Markup::Node) -> void;
+  auto saveMCC(Markup::Node) -> void;
+  auto saveEvent(Markup::Node) -> void;
+  auto saveSA1(Markup::Node) -> void;
+  auto saveSuperFX(Markup::Node) -> void;
+  auto saveARMDSP(Markup::Node) -> void;
+  auto saveHitachiDSP(Markup::Node) -> void;
+  auto saveNECDSP(Markup::Node) -> void;
+  auto saveEpsonRTC(Markup::Node) -> void;
+  auto saveSharpRTC(Markup::Node) -> void;
+  auto saveSPC7110(Markup::Node) -> void;
+  auto saveSDD1(Markup::Node) -> void;
+  auto saveOBC1(Markup::Node) -> void;
+
+  auto saveMemory(MappedRAM&, Markup::Node, maybe<uint> = nothing) -> void;
 
   friend class Interface;
+  friend class ICD2;
 };
 
 extern Cartridge cartridge;

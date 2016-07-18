@@ -11,11 +11,11 @@ struct CheatDatabase : Window {
       Button selectAllButton{&controlLayout, Size{100, 0}};
       Button unselectAllButton{&controlLayout, Size{100, 0}};
       Widget spacer{&controlLayout, Size{~0, 0}};
-      Button addCodesButton{&controlLayout, Size{80, 0}};
+      Button addCodesButton{&controlLayout, Size{100, 0}};
 };
 
 struct CheatEditor : TabFrameItem {
-  enum : unsigned { Slots = 128 };
+  enum : uint { Slots = 128 };
 
   CheatEditor(TabFrame*);
   auto doChangeSelected() -> void;
@@ -36,7 +36,7 @@ struct CheatEditor : TabFrameItem {
   Cheat cheats[Slots];
 
   VerticalLayout layout{this};
-    ListView cheatList{&layout, Size{~0, ~0}};
+    TableView cheatList{&layout, Size{~0, ~0}};
     HorizontalLayout codeLayout{&layout, Size{~0, 0}};
       Label codeLabel{&codeLayout, Size{70, 0}};
       LineEdit codeValue{&codeLayout, Size{~0, 0}};
@@ -51,7 +51,7 @@ struct CheatEditor : TabFrameItem {
 };
 
 struct StateManager : TabFrameItem {
-  enum : unsigned { Slots = 32 };
+  enum : uint { Slots = 32 };
 
   StateManager(TabFrame*);
   auto doChangeSelected() -> void;
@@ -64,7 +64,7 @@ struct StateManager : TabFrameItem {
   auto doErase() -> void;
 
   VerticalLayout layout{this};
-    ListView stateList{&layout, Size{~0, ~0}};
+    TableView stateList{&layout, Size{~0, ~0}};
     HorizontalLayout descriptionLayout{&layout, Size{~0, 0}};
       Label descriptionLabel{&descriptionLayout, Size{70, 0}};
       LineEdit descriptionValue{&descriptionLayout, Size{~0, 0}};
@@ -76,15 +76,24 @@ struct StateManager : TabFrameItem {
       Button eraseButton{&controlLayout, Size{80, 0}};
 };
 
+struct ManifestViewer : TabFrameItem {
+  ManifestViewer(TabFrame*);
+  auto doRefresh() -> void;
+
+  VerticalLayout layout{this};
+    TextEdit manifestView{&layout, Size{~0, ~0}};
+};
+
 struct ToolsManager : Window {
   ToolsManager();
-  auto show(unsigned tool) -> void;
+  auto show(uint tool) -> void;
 
   VerticalLayout layout{this};
     TabFrame panel{&layout, Size{~0, ~0}};
       CheatEditor cheatEditor{&panel};
       StateManager stateManager{&panel};
+      ManifestViewer manifestViewer{&panel};
 };
 
-extern CheatDatabase* cheatDatabase;
-extern ToolsManager* toolsManager;
+extern unique_pointer<CheatDatabase> cheatDatabase;
+extern unique_pointer<ToolsManager> toolsManager;

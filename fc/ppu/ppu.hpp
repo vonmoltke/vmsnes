@@ -1,107 +1,120 @@
 struct PPU : Thread {
-  static void Main();
-  void main();
-  void tick();
+  static auto Enter() -> void;
+  auto main() -> void;
+  auto step(uint clocks) -> void;
 
-  void scanline();
-  void frame();
+  auto scanline() -> void;
+  auto frame() -> void;
+  auto refresh() -> void;
 
-  void power();
-  void reset();
+  auto power() -> void;
+  auto reset() -> void;
 
-  uint8 read(uint16 addr);
-  void write(uint16 addr, uint8 data);
+  //memory.cpp
+  auto readCIRAM(uint11 addr) -> uint8;
+  auto writeCIRAM(uint11 addr, uint8 data) -> void;
 
-  uint8 ciram_read(uint16 addr);
-  void ciram_write(uint16 addr, uint8 data);
+  auto readCGRAM(uint5 addr) -> uint8;
+  auto writeCGRAM(uint5 addr, uint8 data) -> void;
 
-  uint8 cgram_read(uint16 addr);
-  void cgram_write(uint16 addr, uint8 data);
+  auto readIO(uint16 addr) -> uint8;
+  auto writeIO(uint16 addr, uint8 data) -> void;
 
-  bool raster_enable() const;
-  unsigned nametable_addr() const;
-  unsigned scrollx() const;
-  unsigned scrolly() const;
-  unsigned sprite_height() const;
+  //render.cpp
+  auto enable() const -> bool;
+  auto loadCHR(uint16 addr) -> uint8;
 
-  uint8 chr_load(uint16 addr);
+  auto renderPixel() -> void;
+  auto renderSprite() -> void;
+  auto renderScanline() -> void;
 
-  void scrollx_increment();
-  void scrolly_increment();
+  //serialization.cpp
+  auto serialize(serializer&) -> void;
 
-  void raster_pixel();
-  void raster_sprite();
-  void raster_scanline();
-
-  void serialize(serializer&);
-
-  struct Status {
+  struct IO {
+    //internal
     uint8 mdr;
 
-    bool field;
-    unsigned lx;
-    unsigned ly;
+    uint1 field;
+    uint lx;
+    uint ly;
 
-    uint8 bus_data;
+    uint8 busData;
 
-    bool address_latch;
+    union {
+      uint value;
+      NaturalBitField<uint, 0, 4> tileX;
+      NaturalBitField<uint, 5, 9> tileY;
+      NaturalBitField<uint,10,11> nametable;
+      NaturalBitField<uint,10,10> nametableX;
+      NaturalBitField<uint,11,11> nametableY;
+      NaturalBitField<uint,12,14> fineY;
+      NaturalBitField<uint, 0,14> address;
+      NaturalBitField<uint, 0, 7> addressLo;
+      NaturalBitField<uint, 8,14> addressHi;
+      NaturalBitField<uint,15,15> latch;
+      NaturalBitField<uint,16,18> fineX;
+    } v, t;
 
-    uint15 vaddr;
-    uint15 taddr;
-    uint8 xaddr;
-
-    bool nmi_hold;
-    bool nmi_flag;
+    bool nmiHold;
+    bool nmiFlag;
 
     //$2000
-    bool nmi_enable;
-    bool master_select;
-    bool sprite_size;
-    unsigned bg_addr;
-    unsigned sprite_addr;
-    unsigned vram_increment;
+    uint vramIncrement;
+    uint spriteAddress;
+    uint bgAddress;
+    uint spriteHeight;
+    bool masterSelect;
+    bool nmiEnable;
 
     //$2001
-    uint3 emphasis;
-    bool sprite_enable;
-    bool bg_enable;
-    bool sprite_edge_enable;
-    bool bg_edge_enable;
     bool grayscale;
+    bool bgEdgeEnable;
+    bool spriteEdgeEnable;
+    bool bgEnable;
+    bool spriteEnable;
+    uint3 emphasis;
 
     //$2002
-    bool sprite_zero_hit;
-    bool sprite_overflow;
+    bool spriteOverflow;
+    bool spriteZeroHit;
 
     //$2003
-    uint8 oam_addr;
-  } status;
+    uint8 oamAddress;
+  } io;
 
-  struct Raster {
+  struct OAM {
+    //serialization.cpp
+    auto serialize(serializer&) -> void;
+
+    uint8 id = 64;
+    uint8 y = 0xff;
+    uint8 tile = 0xff;
+    uint8 attr = 0xff;
+    uint8 x = 0xff;
+
+    uint8 tiledataLo = 0;
+    uint8 tiledataHi = 0;
+  };
+
+  struct Latches {
     uint16 nametable;
     uint16 attribute;
-    uint16 tiledatalo;
-    uint16 tiledatahi;
+    uint16 tiledataLo;
+    uint16 tiledataHi;
 
-    unsigned oam_iterator;
-    unsigned oam_counter;
+    uint oamIterator;
+    uint oamCounter;
 
-    struct OAM {
-      uint8 id;
-      uint8 y;
-      uint8 tile;
-      uint8 attr;
-      uint8 x;
+    OAM oam[8];   //primary
+    OAM soam[8];  //secondary
+  } latch;
 
-      uint8 tiledatalo;
-      uint8 tiledatahi;
-    } oam[8], soam[8];
-  } raster;
-
-  uint32 buffer[256 * 262];
   uint8 ciram[2048];
   uint8 cgram[32];
   uint8 oam[256];
+
+  uint32 buffer[256 * 262];
 };
 
 extern PPU ppu;

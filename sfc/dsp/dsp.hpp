@@ -1,175 +1,177 @@
+//Sony CXD1222Q-1
+
 struct DSP : Thread {
-  enum : bool { Threaded = true };
-  alwaysinline void step(unsigned clocks);
-  alwaysinline void synchronize_smp();
+  shared_pointer<Emulator::Stream> stream;
 
-  bool mute();
-  uint8 read(uint8 addr);
-  void write(uint8 addr, uint8 data);
-
-  void enter();
-  void power();
-  void reset();
-
-  void serialize(serializer&);
   DSP();
-  ~DSP();
+
+  alwaysinline auto step(uint clocks) -> void;
+  alwaysinline auto synchronizeSMP() -> void;
+
+  auto mute() const -> bool;
+  auto read(uint8 addr) -> uint8;
+  auto write(uint8 addr, uint8 data) -> void;
+
+  auto main() -> void;
+  auto load(Markup::Node) -> bool;
+  auto power() -> void;
+  auto reset() -> void;
+
+  //serialization.cpp
+  auto serialize(serializer&) -> void;
 
 privileged:
-  #include "moduloarray.hpp"
-
-  //global registers
-  enum global_reg_t {
-    r_mvoll = 0x0c, r_mvolr = 0x1c,
-    r_evoll = 0x2c, r_evolr = 0x3c,
-    r_kon   = 0x4c, r_koff  = 0x5c,
-    r_flg   = 0x6c, r_endx  = 0x7c,
-    r_efb   = 0x0d, r_pmon  = 0x2d,
-    r_non   = 0x3d, r_eon   = 0x4d,
-    r_dir   = 0x5d, r_esa   = 0x6d,
-    r_edl   = 0x7d, r_fir   = 0x0f,  //8 coefficients at 0x0f, 0x1f, ... 0x7f
+  enum GlobalRegister : uint {
+    MVOLL = 0x0c, MVOLR = 0x1c,
+    EVOLL = 0x2c, EVOLR = 0x3c,
+    KON   = 0x4c, KOFF  = 0x5c,
+    FLG   = 0x6c, ENDX  = 0x7c,
+    EFB   = 0x0d, PMON  = 0x2d,
+    NON   = 0x3d, EON   = 0x4d,
+    DIR   = 0x5d, ESA   = 0x6d,
+    EDL   = 0x7d, FIR   = 0x0f,  //8 coefficients at 0x0f, 0x1f, ... 0x7f
   };
 
-  //voice registers
-  enum voice_reg_t {
-    v_voll   = 0x00, v_volr   = 0x01,
-    v_pitchl = 0x02, v_pitchh = 0x03,
-    v_srcn   = 0x04, v_adsr0  = 0x05,
-    v_adsr1  = 0x06, v_gain   = 0x07,
-    v_envx   = 0x08, v_outx   = 0x09,
+  enum VoiceRegister : uint {
+    VOLL   = 0x00, VOLR   = 0x01,
+    PITCHL = 0x02, PITCHH = 0x03,
+    SRCN   = 0x04, ADSR0  = 0x05,
+    ADSR1  = 0x06, GAIN   = 0x07,
+    ENVX   = 0x08, OUTX   = 0x09,
   };
 
-  //internal envelope modes
-  enum env_mode_t { env_release, env_attack, env_decay, env_sustain };
+  enum EnvelopeMode : uint {
+    EnvelopeRelease,
+    EnvelopeAttack,
+    EnvelopeDecay,
+    EnvelopeSustain,
+  };
 
-  //internal constants
-  enum { echo_hist_size =  8 };
-  enum { brr_buf_size   = 12 };
-  enum { brr_block_size =  9 };
+  enum : uint {
+    BrrBlockSize = 9,
+    CounterRange = 2048 * 5 * 3,  //30720 (0x7800)
+  };
 
-  //global state
-  struct state_t {
+  struct State {
     uint8 regs[128];
 
-    moduloarray<int, echo_hist_size> echo_hist[2];  //echo history keeps most recent 8 samples
-    int echo_hist_pos;
+    int echoHistory[2][8];  //echo history keeps most recent 8 stereo samples
+    uint3 echoHistoryOffset;
 
-    bool every_other_sample;  //toggles every sample
-    int kon;                  //KON value when last checked
+    bool everyOtherSample;  //toggles every sample
+    int kon;                //KON value when last checked
     int noise;
     int counter;
-    int echo_offset;          //offset from ESA in echo buffer
-    int echo_length;          //number of bytes that echo_offset will stop at
+    int echoOffset;         //offset from ESA in echo buffer
+    int echoLength;         //number of bytes that echo_offset will stop at
 
     //hidden registers also written to when main register is written to
-    int new_kon;
-    int endx_buf;
-    int envx_buf;
-    int outx_buf;
+    int konBuffer;
+    int endxBuffer;
+    int envxBuffer;
+    int outxBuffer;
 
-    //temporary state between clocks
+    //temporary state between clocks (prefixed with _)
 
     //read once per sample
-    int t_pmon;
-    int t_non;
-    int t_eon;
-    int t_dir;
-    int t_koff;
+    int _pmon;
+    int _non;
+    int _eon;
+    int _dir;
+    int _koff;
 
     //read a few clocks ahead before used
-    int t_brr_next_addr;
-    int t_adsr0;
-    int t_brr_header;
-    int t_brr_byte;
-    int t_srcn;
-    int t_esa;
-    int t_echo_disabled;
+    int _brrNextAddress;
+    int _adsr0;
+    int _brrHeader;
+    int _brrByte;
+    int _srcn;
+    int _esa;
+    int _echoDisabled;
 
     //internal state that is recalculated every sample
-    int t_dir_addr;
-    int t_pitch;
-    int t_output;
-    int t_looped;
-    int t_echo_ptr;
+    int _dirAddress;
+    int _pitch;
+    int _output;
+    int _looped;
+    int _echoPointer;
 
     //left/right sums
-    int t_main_out[2];
-    int t_echo_out[2];
-    int t_echo_in [2];
+    int _mainOut[2];
+    int _echoOut[2];
+    int _echoIn [2];
   } state;
 
-  //voice state
-  struct voice_t {
-    moduloarray<int, brr_buf_size> buffer;  //decoded samples
-    int buf_pos;     //place in buffer where next samples will be decoded
-    int interp_pos;  //relative fractional position in sample (0x1000 = 1.0)
-    int brr_addr;    //address of current BRR block
-    int brr_offset;  //current decoding offset in BRR block
-    int vbit;        //bitmask for voice: 0x01 for voice 0, 0x02 for voice 1, etc
-    int vidx;        //voice channel register index: 0x00 for voice 0, 0x10 for voice 1, etc
-    int kon_delay;   //KON delay/current setup phase
-    int env_mode;
-    int env;         //current envelope level
-    int t_envx_out;
-    int hidden_env;  //used by GAIN mode 7, very obscure quirk
+  struct Voice {
+    int buffer[12 * 3];  //12 decoded samples (mirrored for wrapping)
+    int bufferOffset;    //place in buffer where next samples will be decoded
+    int gaussianOffset;  //relative fractional position in sample (0x1000 = 1.0)
+    int brrAddress;      //address of current BRR block
+    int brrOffset;       //current decoding offset in BRR block
+    int vbit;            //bitmask for voice: 0x01 for voice 0, 0x02 for voice 1, etc
+    int vidx;            //voice channel register index: 0x00 for voice 0, 0x10 for voice 1, etc
+    int konDelay;        //KON delay/current setup phase
+    int envelopeMode;
+    int envelope;        //current envelope level
+    int hiddenEnvelope;  //used by GAIN mode 7, very obscure quirk
+    int _envxOut;
   } voice[8];
 
-  //gaussian
-  static const int16 gaussian_table[512];
-  int gaussian_interpolate(const voice_t& v);
+  //gaussian.cpp
+  static const int16 GaussianTable[512];
+  auto gaussianInterpolate(const Voice& v) -> int;
 
-  //counter
-  enum { counter_range = 2048 * 5 * 3 };  //30720 (0x7800)
-  static const uint16 counter_rate[32];
-  static const uint16 counter_offset[32];
-  void counter_tick();
-  bool counter_poll(unsigned rate);
+  //counter.cpp
+  static const uint16 CounterRate[32];
+  static const uint16 CounterOffset[32];
+  auto counterTick() -> void;
+  auto counterPoll(uint rate) -> bool;
 
-  //envelope
-  void envelope_run(voice_t& v);
+  //envelope.cpp
+  auto envelopeRun(Voice& v) -> void;
 
-  //brr
-  void brr_decode(voice_t& v);
+  //brr.cpp
+  auto brrDecode(Voice& v) -> void;
 
-  //misc
-  void misc_27();
-  void misc_28();
-  void misc_29();
-  void misc_30();
+  //misc.cpp
+  auto misc27() -> void;
+  auto misc28() -> void;
+  auto misc29() -> void;
+  auto misc30() -> void;
 
-  //voice
-  void voice_output(voice_t& v, bool channel);
-  void voice_1 (voice_t &v);
-  void voice_2 (voice_t &v);
-  void voice_3 (voice_t &v);
-  void voice_3a(voice_t &v);
-  void voice_3b(voice_t &v);
-  void voice_3c(voice_t &v);
-  void voice_4 (voice_t &v);
-  void voice_5 (voice_t &v);
-  void voice_6 (voice_t &v);
-  void voice_7 (voice_t &v);
-  void voice_8 (voice_t &v);
-  void voice_9 (voice_t &v);
+  //voice.cpp
+  auto voiceOutput(Voice& v, bool channel) -> void;
+  auto voice1 (Voice& v) -> void;
+  auto voice2 (Voice& v) -> void;
+  auto voice3 (Voice& v) -> void;
+  auto voice3a(Voice& v) -> void;
+  auto voice3b(Voice& v) -> void;
+  auto voice3c(Voice& v) -> void;
+  auto voice4 (Voice& v) -> void;
+  auto voice5 (Voice& v) -> void;
+  auto voice6 (Voice& v) -> void;
+  auto voice7 (Voice& v) -> void;
+  auto voice8 (Voice& v) -> void;
+  auto voice9 (Voice& v) -> void;
 
-  //echo
-  int calc_fir(int i, bool channel);
-  int echo_output(bool channel);
-  void echo_read(bool channel);
-  void echo_write(bool channel);
-  void echo_22();
-  void echo_23();
-  void echo_24();
-  void echo_25();
-  void echo_26();
-  void echo_27();
-  void echo_28();
-  void echo_29();
-  void echo_30();
+  //echo.cpp
+  auto calculateFIR(bool channel, int index) -> int;
+  auto echoOutput(bool channel) -> int;
+  auto echoRead(bool channel) -> void;
+  auto echoWrite(bool channel) -> void;
+  auto echo22() -> void;
+  auto echo23() -> void;
+  auto echo24() -> void;
+  auto echo25() -> void;
+  auto echo26() -> void;
+  auto echo27() -> void;
+  auto echo28() -> void;
+  auto echo29() -> void;
+  auto echo30() -> void;
 
-  //dsp
-  static void Enter();
-  void tick();
+  //dsp.cpp
+  static auto Enter() -> void;
+  auto tick() -> void;
 };
 
 extern DSP dsp;

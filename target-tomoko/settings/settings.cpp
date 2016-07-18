@@ -3,19 +3,18 @@
 #include "audio.cpp"
 #include "input.cpp"
 #include "hotkeys.cpp"
-#include "timing.cpp"
 #include "advanced.cpp"
-SettingsManager* settingsManager = nullptr;
+unique_pointer<SettingsManager> settingsManager;
 
 SettingsManager::SettingsManager() {
   settingsManager = this;
 
   layout.setMargin(5);
-  statusBar.setFont(Font::sans(8, "Bold"));
+  statusBar.setFont(Font().setBold());
 
   setTitle("Configuration Settings");
-  setSize({600, 400});
-  setPlacement(0.0, 1.0);
+  setSize({600, 405});
+  setAlignment({0.0, 1.0});
 
   onSize([&] {
     input.mappingList.resizeColumns();
@@ -32,7 +31,7 @@ auto SettingsManager::setVisible(bool visible) -> SettingsManager& {
   return *this;
 }
 
-auto SettingsManager::show(unsigned setting) -> void {
+auto SettingsManager::show(uint setting) -> void {
   panel.item(setting)->setSelected();
   setVisible();
   setFocused();

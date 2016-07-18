@@ -1,82 +1,101 @@
 #include "../tomoko.hpp"
-Presentation* presentation = nullptr;
+unique_pointer<Presentation> presentation;
 
 Presentation::Presentation() {
   presentation = this;
 
   libraryMenu.setText("Library");
   for(auto& emulator : program->emulators) {
-    for(auto& media : emulator->media) {
-      if(!media.bootable) continue;
+    for(auto& medium : emulator->media) {
       auto item = new MenuItem{&libraryMenu};
-      item->setText({media.name, " ..."}).onActivate([=] {
-        directory::create({config->library.location, media.name});
-        auto location = BrowserDialog()
-        .setTitle({"Load ", media.name})
-        .setPath({config->library.location, media.name})
-        .setFilters(string{media.name, "|*.", media.type})
-        .openFolder();
-        if(directory::exists(location)) {
-          program->loadMedia(location);
-        }
+      item->setText({medium.name, " ..."}).onActivate([=] {
+        program->loadMedium(*emulator, medium);
       });
       loadBootableMedia.append(item);
     }
+  }
+  //add icarus menu options -- but only if icarus binary is present
+  if(execute("icarus", "--name").output.strip() == "icarus") {
+    libraryMenu.append(MenuSeparator());
+    libraryMenu.append(MenuItem().setText("Load ROM File ...").onActivate([&] {
+      audio->clear();
+      if(auto location = execute("icarus", "--import")) {
+        program->mediumQueue.append(location.output.strip());
+        program->loadMedium();
+      }
+    }));
+    libraryMenu.append(MenuItem().setText("Import ROM Files ...").onActivate([&] {
+      invoke("icarus");
+    }));
   }
 
   systemMenu.setText("System").setVisible(false);
   powerSystem.setText("Power").onActivate([&] { program->powerCycle(); });
   resetSystem.setText("Reset").onActivate([&] { program->softReset(); });
-  unloadSystem.setText("Unload").onActivate([&] { program->unloadMedia(); drawSplashScreen(); });
+  unloadSystem.setText("Unload").onActivate([&] { program->unloadMedium(); });
 
   settingsMenu.setText("Settings");
   videoScaleMenu.setText("Video Scale");
-  if(config->video.scale == "Small") videoScaleSmall.setChecked();
-  if(config->video.scale == "Normal") videoScaleNormal.setChecked();
-  if(config->video.scale == "Large") videoScaleLarge.setChecked();
+  if(settings["Video/Scale"].text() == "Small") videoScaleSmall.setChecked();
+  if(settings["Video/Scale"].text() == "Medium") videoScaleMedium.setChecked();
+  if(settings["Video/Scale"].text() == "Large") videoScaleLarge.setChecked();
   videoScaleSmall.setText("Small").onActivate([&] {
-    config->video.scale = "Small";
+    settings["Video/Scale"].setValue("Small");
     resizeViewport();
   });
-  videoScaleNormal.setText("Normal").onActivate([&] {
-    config->video.scale = "Normal";
+  videoScaleMedium.setText("Medium").onActivate([&] {
+    settings["Video/Scale"].setValue("Medium");
     resizeViewport();
   });
   videoScaleLarge.setText("Large").onActivate([&] {
-    config->video.scale = "Large";
+    settings["Video/Scale"].setValue("Large");
     resizeViewport();
   });
-  aspectCorrection.setText("Aspect Correction").setChecked(config->video.aspectCorrection).onToggle([&] {
-    config->video.aspectCorrection = aspectCorrection.checked();
+  aspectCorrection.setText("Aspect Correction").setChecked(settings["Video/AspectCorrection"].boolean()).onToggle([&] {
+    settings["Video/AspectCorrection"].setValue(aspectCorrection.checked());
     resizeViewport();
   });
-  videoFilterMenu.setText("Video Filter");
-  if(config->video.filter == "None") videoFilterNone.setChecked();
-  if(config->video.filter == "Blur") videoFilterBlur.setChecked();
-  videoFilterNone.setText("None").onActivate([&] { config->video.filter = "None"; program->updateVideoFilter(); });
-  videoFilterBlur.setText("Blur").onActivate([&] { config->video.filter = "Blur"; program->updateVideoFilter(); });
-  colorEmulation.setText("Color Emulation").setChecked(config->video.colorEmulation).onToggle([&] {
-    config->video.colorEmulation = colorEmulation.checked();
-    program->updateVideoPalette();
+  videoEmulationMenu.setText("Video Emulation");
+  blurEmulation.setText("Blurring").setChecked(settings["Video/BlurEmulation"].boolean()).onToggle([&] {
+    settings["Video/BlurEmulation"].setValue(blurEmulation.checked());
+    if(emulator) emulator->set("Blur Emulation", blurEmulation.checked());
   });
-  maskOverscan.setText("Mask Overscan").setChecked(config->video.overscan.mask).onToggle([&] {
-    config->video.overscan.mask = maskOverscan.checked();
+  colorEmulation.setText("Colors").setChecked(settings["Video/ColorEmulation"].boolean()).onToggle([&] {
+    settings["Video/ColorEmulation"].setValue(colorEmulation.checked());
+    if(emulator) emulator->set("Color Emulation", colorEmulation.checked());
   });
-  synchronizeVideo.setText("Synchronize Video").setChecked(config->video.synchronize).onToggle([&] {
-    config->video.synchronize = synchronizeVideo.checked();
-    video->set(Video::Synchronize, config->video.synchronize);
+  scanlineEmulation.setText("Scanlines").setChecked(settings["Video/ScanlineEmulation"].boolean()).setVisible(false).onToggle([&] {
+    settings["Video/ScanlineEmulation"].setValue(scanlineEmulation.checked());
+    if(emulator) emulator->set("Scanline Emulation", scanlineEmulation.checked());
   });
-  synchronizeAudio.setText("Synchronize Audio").setChecked(config->audio.synchronize).onToggle([&] {
-    config->audio.synchronize = synchronizeAudio.checked();
-    audio->set(Audio::Synchronize, config->audio.synchronize);
+  maskOverscan.setText("Mask Overscan").setChecked(settings["Video/Overscan/Mask"].boolean()).onToggle([&] {
+    settings["Video/Overscan/Mask"].setValue(maskOverscan.checked());
   });
-  muteAudio.setText("Mute Audio").setChecked(config->audio.mute).onToggle([&] {
-    config->audio.mute = muteAudio.checked();
-    program->dsp.setVolume(config->audio.mute ? 0.0 : 1.0);
+  videoShaderMenu.setText("Video Shader");
+  videoShaderNone.setText("None").onActivate([&] {
+    settings["Video/Shader"].setValue("None");
+    program->updateVideoShader();
   });
-  showStatusBar.setText("Show Status Bar").setChecked(config->userInterface.showStatusBar).onToggle([&] {
-    config->userInterface.showStatusBar = showStatusBar.checked();
-    statusBar.setVisible(config->userInterface.showStatusBar);
+  videoShaderBlur.setText("Blur").onActivate([&] {
+    settings["Video/Shader"].setValue("Blur");
+    program->updateVideoShader();
+  });
+  loadShaders();
+  synchronizeVideo.setText("Synchronize Video").setChecked(settings["Video/Synchronize"].boolean()).setVisible(false).onToggle([&] {
+    settings["Video/Synchronize"].setValue(synchronizeVideo.checked());
+    video->set(Video::Synchronize, synchronizeVideo.checked());
+  });
+  synchronizeAudio.setText("Synchronize Audio").setChecked(settings["Audio/Synchronize"].boolean()).onToggle([&] {
+    settings["Audio/Synchronize"].setValue(synchronizeAudio.checked());
+    audio->set(Audio::Synchronize, synchronizeAudio.checked());
+  });
+  muteAudio.setText("Mute Audio").setChecked(settings["Audio/Mute"].boolean()).onToggle([&] {
+    settings["Audio/Mute"].setValue(muteAudio.checked());
+    program->updateAudioEffects();
+  });
+  showStatusBar.setText("Show Status Bar").setChecked(settings["UserInterface/ShowStatusBar"].boolean()).onToggle([&] {
+    settings["UserInterface/ShowStatusBar"].setValue(showStatusBar.checked());
+    statusBar.setVisible(showStatusBar.checked());
     if(visible()) resizeViewport();
   });
   showConfiguration.setText("Configuration ...").onActivate([&] { settingsManager->show(2); });
@@ -96,17 +115,51 @@ Presentation::Presentation() {
   loadSlot5.setText("Slot 5").onActivate([&] { program->loadState(5); });
   cheatEditor.setText("Cheat Editor").onActivate([&] { toolsManager->show(0); });
   stateManager.setText("State Manager").onActivate([&] { toolsManager->show(1); });
+  manifestViewer.setText("Manifest Viewer").onActivate([&] { toolsManager->show(2); });
 
-  statusBar.setFont(Font::sans(8, "Bold"));
-  statusBar.setVisible(config->userInterface.showStatusBar);
+  helpMenu.setText("Help");
+  documentation.setText("Documentation ...").onActivate([&] {
+    invoke("http://doc.byuu.org/higan/");
+  });
+  about.setText("About ...").onActivate([&] {
+    MessageDialog().setParent(*this).setTitle("About higan ...").setText({
+      Emulator::Name, " v", Emulator::Version, "\n\n",
+      "Author: ", Emulator::Author, "\n",
+      "License: ", Emulator::License, "\n",
+      "Website: ", Emulator::Website
+    }).information();
+  });
+
+  statusBar.setFont(Font().setBold());
+  statusBar.setVisible(settings["UserInterface/ShowStatusBar"].boolean());
+
+  viewport.setDroppable().onDrop([&](auto locations) {
+    if(!directory::exists(locations(0))) return;
+    program->mediumQueue.append(locations(0));
+    program->loadMedium();
+  });
 
   onClose([&] { program->quit(); });
 
-  setTitle({"tomoko v", Emulator::Version});
+  setTitle({"higan v", Emulator::Version});
   setResizable(false);
   setBackgroundColor({0, 0, 0});
   resizeViewport();
   setCentered();
+
+  #if defined(PLATFORM_WINDOWS)
+  Application::Windows::onModalChange([](bool modal) { if(modal && audio) audio->clear(); });
+  #endif
+
+  #if defined(PLATFORM_MACOSX)
+  showConfigurationSeparator.setVisible(false);
+  showConfiguration.setVisible(false);
+  about.setVisible(false);
+  Application::Cocoa::onAbout([&] { about.doActivate(); });
+  Application::Cocoa::onActivate([&] { setFocused(); });
+  Application::Cocoa::onPreferences([&] { showConfiguration.doActivate(); });
+  Application::Cocoa::onQuit([&] { doClose(); });
+  #endif
 }
 
 auto Presentation::updateEmulator() -> void {
@@ -114,76 +167,70 @@ auto Presentation::updateEmulator() -> void {
   resetSystem.setVisible(emulator->information.resettable);
   inputPort1.setVisible(false).reset();
   inputPort2.setVisible(false).reset();
+  inputPort3.setVisible(false).reset();
 
-  for(auto n : range(emulator->port)) {
-    if(n >= 2) break;
-    auto& port = emulator->port[n];
-    auto& menu = (n == 0 ? inputPort1 : inputPort2);
+  for(auto n : range(emulator->ports)) {
+    if(n >= 3) break;
+    auto& port = emulator->ports[n];
+    auto& menu = (n == 0 ? inputPort1 : n == 1 ? inputPort2 : inputPort3);
     menu.setText(port.name);
 
     Group devices;
-    for(auto& device : port.device) {
+    for(auto& device : port.devices) {
       MenuRadioItem item{&menu};
       item.setText(device.name).onActivate([=] {
+        auto path = string{emulator->information.name, "/", port.name}.replace(" ", "");
+        settings[path].setValue(device.name);
         emulator->connect(port.id, device.id);
       });
       devices.append(item);
     }
-    if(devices.objects() > 1) menu.setVisible();
+    if(devices.objectCount() > 1) {
+      auto path = string{emulator->information.name, "/", port.name}.replace(" ", "");
+      auto device = settings(path).text();
+      for(auto item : devices.objects<MenuRadioItem>()) {
+        if(item.text() == device) item.setChecked();
+      }
+      menu.setVisible();
+    }
   }
 
-  systemMenuSeparatorPorts.setVisible(inputPort1.visible() || inputPort2.visible());
+  systemMenuSeparatorPorts.setVisible(inputPort1.visible() || inputPort2.visible() || inputPort3.visible());
+
+  emulator->set("Blur Emulation", blurEmulation.checked());
+  emulator->set("Color Emulation", colorEmulation.checked());
+  emulator->set("Scanline Emulation", scanlineEmulation.checked());
 }
 
 auto Presentation::resizeViewport() -> void {
-  signed scale = 1;
-  if(config->video.scale == "Small" ) scale = 1;
-  if(config->video.scale == "Normal") scale = 2;
-  if(config->video.scale == "Large" ) scale = 4;
-
-  signed width  = 256;
-  signed height = 240;
-  if(emulator) {
-    width  = emulator->information.width;
-    height = emulator->information.height;
+  int width   = emulator ? emulator->information.width  : 256;
+  int height  = emulator ? emulator->information.height : 240;
+  double stretch = emulator ? emulator->information.aspectRatio : 1.0;
+  if(stretch != 1.0) {
+    //aspect correction is always enabled in fullscreen mode
+    if(!fullScreen() && !settings["Video/AspectCorrection"].boolean()) stretch = 1.0;
   }
 
-  bool arc = config->video.aspectCorrection;
+  int scale = 2;
+  if(settings["Video/Scale"].text() == "Small" ) scale = 2;
+  if(settings["Video/Scale"].text() == "Medium") scale = 3;
+  if(settings["Video/Scale"].text() == "Large" ) scale = 4;
 
-  if(fullScreen() == false) {
-    signed windowWidth  = 256 * scale;
-    signed windowHeight = 240 * scale;
-    if(arc) windowWidth = windowWidth * 8 / 7;
-
-    double stretch = (arc && emulator && emulator->information.aspectRatio != 1.0) ? 8.0 / 7.0 : 1.0;
-    signed multiplier = min(windowWidth / (signed)(width * stretch), windowHeight / height);
-    width = width * multiplier * stretch;
-    height = height * multiplier;
-
-    setSize({windowWidth, windowHeight});
-    viewport.setGeometry({(windowWidth - width) / 2, (windowHeight - height) / 2, width, height});
+  int windowWidth = 0, windowHeight = 0;
+  if(!fullScreen()) {
+    windowWidth  = 256 * scale * (settings["Video/AspectCorrection"].boolean() ? 8.0 / 7.0 : 1.0);
+    windowHeight = 240 * scale;
   } else {
-    auto desktop = Desktop::size();
-
-    //aspect ratio correction is always enabled in fullscreen mode
-    //note that below algorithm yields 7:6 ratio on 2560x(1440,1600) monitors
-    //this is extremely close to the optimum 8:7 ratio
-    //it is used so that linear interpolation isn't required
-    //todo: we should handle other resolutions nicely as well
-    unsigned multiplier = desktop.height() / height;
-    width *= 1 + multiplier;
-    height *= multiplier;
-
-    signed x = (desktop.width() - width) / 2;
-    signed y = (desktop.height() - height) / 2;
-
-    if(x < 0) x = 0;
-    if(y < 0) y = 0;
-    if(width > desktop.width()) width = desktop.width();
-    if(height > desktop.height()) height = desktop.height();
-
-    viewport.setGeometry({x, y, width, height});
+    windowWidth  = geometry().width();
+    windowHeight = geometry().height();
   }
+
+  int multiplier = min(windowWidth / (int)(width * stretch), windowHeight / height);
+  width = width * multiplier * stretch;
+  height = height * multiplier;
+
+  if(!fullScreen()) setSize({windowWidth, windowHeight});
+  viewport.setGeometry({(windowWidth - width) / 2, (windowHeight - height) / 2, width, height});
 
   if(!emulator) drawSplashScreen();
 }
@@ -200,7 +247,7 @@ auto Presentation::toggleFullScreen() -> void {
     setFullScreen(false);
     setResizable(false);
     menuBar.setVisible(true);
-    statusBar.setVisible(config->userInterface.showStatusBar);
+    statusBar.setVisible(settings["UserInterface/ShowStatusBar"].boolean());
   }
 
   Application::processEvents();
@@ -209,14 +256,39 @@ auto Presentation::toggleFullScreen() -> void {
 
 auto Presentation::drawSplashScreen() -> void {
   if(!video) return;
-  uint32* output;
-  unsigned length;
+  uint32_t* output;
+  uint length;
   if(video->lock(output, length, 256, 240)) {
     for(auto y : range(240)) {
-      uint32* dp = output + y * (length >> 2);
+      auto dp = output + y * (length >> 2);
       for(auto x : range(256)) *dp++ = 0xff000000;
     }
     video->unlock();
     video->refresh();
+  }
+}
+
+auto Presentation::loadShaders() -> void {
+  auto pathname = locate("Video Shaders/");
+
+  if(settings["Video/Driver"].text() == "OpenGL") {
+    for(auto shader : directory::folders(pathname, "*.shader")) {
+      if(videoShaders.objectCount() == 2) videoShaderMenu.append(MenuSeparator());
+      MenuRadioItem item{&videoShaderMenu};
+      item.setText(string{shader}.trimRight(".shader/", 1L)).onActivate([=] {
+        settings["Video/Shader"].setValue({pathname, shader});
+        program->updateVideoShader();
+      });
+      videoShaders.append(item);
+    }
+  }
+
+  if(settings["Video/Shader"].text() == "None") videoShaderNone.setChecked();
+  if(settings["Video/Shader"].text() == "Blur") videoShaderBlur.setChecked();
+
+  for(auto radioItem : videoShaders.objects<MenuRadioItem>()) {
+    if(settings["Video/Shader"].text() == string{pathname, radioItem.text(), ".shader/"}) {
+      radioItem.setChecked();
+    }
   }
 }

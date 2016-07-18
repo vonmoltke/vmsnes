@@ -2,22 +2,23 @@ CheatDatabase::CheatDatabase() {
   cheatDatabase = this;
 
   layout.setMargin(5);
-  cheatList.setCheckable();
-  selectAllButton.setText("Select All").onActivate([&] { cheatList.checkAll(); });
-  unselectAllButton.setText("Unselect All").onActivate([&] { cheatList.uncheckAll(); });
+  selectAllButton.setText("Select All").onActivate([&] {
+    for(auto& item : cheatList.items()) item.setChecked(true);
+  });
+  unselectAllButton.setText("Unselect All").onActivate([&] {
+    for(auto& item : cheatList.items()) item.setChecked(false);
+  });
   addCodesButton.setText("Add Codes").onActivate([&] { addCodes(); });
 
   setSize({800, 400});
-  setPlacement(0.5, 1.0);
-
-  onSize([&] { cheatList.resizeColumns(); });
+  setAlignment({0.5, 1.0});
 }
 
 auto CheatDatabase::findCodes() -> void {
   if(!emulator) return;
   auto sha256 = emulator->sha256();
 
-  auto contents = string::read(locate({localpath(), "tomoko/"}, "cheats.bml"));
+  auto contents = string::read(locate("cheats.bml"));
   auto document = BML::unserialize(contents);
 
   for(auto cartridge : document.find("cartridge")) {
@@ -25,17 +26,13 @@ auto CheatDatabase::findCodes() -> void {
 
     codes.reset();
     cheatList.reset();
-    cheatList.append(ListViewColumn().setExpandable());
     for(auto cheat : cartridge.find("cheat")) {
       codes.append(cheat["code"].text());
-      cheatList.append(ListViewItem()
-        .append(ListViewCell().setText(cheat["description"].text()))
-      );
+      cheatList.append(ListViewItem().setCheckable().setText(cheat["description"].text()));
     }
 
     setTitle(cartridge["name"].text());
     setVisible();
-    cheatList.resizeColumns();
     return;
   }
 
@@ -43,9 +40,11 @@ auto CheatDatabase::findCodes() -> void {
 }
 
 auto CheatDatabase::addCodes() -> void {
-  for(auto item : cheatList.checked()) {
-    string code = codes(item->offset(), "");
-    string description = item->cell(0)->text();
+  for(auto& item : cheatList.items()) {
+    if(!item.checked()) continue;
+
+    string code = codes(item.offset(), "");
+    string description = item.text();
     if(toolsManager->cheatEditor.addCode(code, description) == false) {
       MessageDialog().setParent(*this).setText("Free slots exhausted. Not all codes could be added.").warning();
       break;

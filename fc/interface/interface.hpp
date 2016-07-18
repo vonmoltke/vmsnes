@@ -1,60 +1,66 @@
-#ifndef FC_HPP
 namespace Famicom {
-#endif
 
 struct ID {
-  enum : unsigned {
+  enum : uint {
     System,
     Famicom,
   };
 
-  enum : unsigned {
-    Manifest,
-    ProgramROM,
-    ProgramRAM,
-    CharacterROM,
-    CharacterRAM,
-  };
+  struct Port { enum : uint {
+    Controller1,
+    Controller2,
+    Expansion,
+  };};
 
-  enum : unsigned {
-    Port1 = 1,
-    Port2 = 2,
-  };
+  struct Device { enum : uint {
+    None,
+    Gamepad,
+  };};
 };
 
 struct Interface : Emulator::Interface {
-  string title();
-  double videoFrequency();
-  double audioFrequency();
-
-  bool loaded();
-  string sha256();
-  unsigned group(unsigned id);
-  void load(unsigned id);
-  void save();
-  void load(unsigned id, const stream& stream);
-  void save(unsigned id, const stream& stream);
-  void unload();
-
-  void power();
-  void reset();
-  void run();
-
-  serializer serialize();
-  bool unserialize(serializer&);
-
-  void cheatSet(const lstring&);
-
-  void paletteUpdate(PaletteMode mode);
+  using Emulator::Interface::load;
 
   Interface();
 
-private:
-  vector<Device> device;
+  auto manifest() -> string override;
+  auto title() -> string override;
+  auto videoFrequency() -> double override;
+  auto videoColors() -> uint32 override;
+  auto videoColor(uint32 color) -> uint64 override;
+  auto audioFrequency() -> double override;
+
+  auto loaded() -> bool override;
+  auto sha256() -> string override;
+  auto load(uint id) -> bool override;
+  auto save() -> void override;
+  auto unload() -> void override;
+
+  auto connect(uint port, uint device) -> void override;
+  auto power() -> void override;
+  auto reset() -> void override;
+  auto run() -> void override;
+
+  auto serialize() -> serializer override;
+  auto unserialize(serializer&) -> bool override;
+
+  auto cheatSet(const string_vector&) -> void override;
+
+  auto cap(const string& name) -> bool override;
+  auto get(const string& name) -> any override;
+  auto set(const string& name, const any& value) -> bool override;
+};
+
+struct Settings {
+  bool colorEmulation = true;
+  bool scanlineEmulation = true;
+
+  uint controllerPort1 = 0;
+  uint controllerPort2 = 0;
+  uint expansionPort = 0;
 };
 
 extern Interface* interface;
+extern Settings settings;
 
-#ifndef FC_HPP
 }
-#endif

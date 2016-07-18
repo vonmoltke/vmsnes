@@ -1,13 +1,13 @@
-#ifndef EMULATOR_INTERFACE_HPP
-#define EMULATOR_INTERFACE_HPP
+#pragma once
 
 namespace Emulator {
 
 struct Interface {
   struct Information {
+    string manufacturer;
     string name;
-    unsigned width;
-    unsigned height;
+    uint width;
+    uint height;
     bool overscan;
     double aspectRatio;
     bool resettable;
@@ -17,80 +17,75 @@ struct Interface {
     } capability;
   } information;
 
-  struct Media {
-    unsigned id;
+  struct Medium {
+    uint id;
     string name;
-    string type;
-    bool bootable;  //false for cartridge slots (eg Sufami Turbo cartridges)
+    string type;  //extension
   };
-  vector<Media> media;
+  vector<Medium> media;
 
   struct Device {
-    unsigned id;
-    unsigned portmask;
+    uint id;
     string name;
     struct Input {
-      unsigned id;
-      unsigned type;  //0 = digital, 1 = analog (relative), 2 = rumble
+      uint type;  //0 = digital, 1 = analog (relative), 2 = rumble
       string name;
-      uintptr_t guid;  //user data field
     };
-    vector<Input> input;
-    vector<unsigned> order;
+    vector<Input> inputs;
   };
 
   struct Port {
-    unsigned id;
+    uint id;
     string name;
-    vector<Device> device;
+    vector<Device> devices;
   };
-  vector<Port> port;
+  vector<Port> ports;
 
   struct Bind {
-    virtual auto loadRequest(unsigned, string, string) -> void {}
-    virtual auto loadRequest(unsigned, string) -> void {}
-    virtual auto saveRequest(unsigned, string) -> void {}
-    virtual auto videoColor(unsigned, uint16_t, uint16_t, uint16_t, uint16_t) -> uint32_t { return 0u; }
-    virtual auto videoRefresh(const uint32_t*, const uint32_t*, unsigned, unsigned, unsigned) -> void {}
-    virtual auto audioSample(int16_t, int16_t) -> void {}
-    virtual auto inputPoll(unsigned, unsigned, unsigned) -> int16_t { return 0; }
-    virtual auto inputRumble(unsigned, unsigned, unsigned, bool) -> void {}
-    virtual auto dipSettings(const Markup::Node&) -> unsigned { return 0; }
-    virtual auto path(unsigned) -> string { return ""; }
+    virtual auto path(uint) -> string { return ""; }
+    virtual auto open(uint, string, vfs::file::mode, bool) -> vfs::shared::file { return {}; }
+    virtual auto load(uint, string, string) -> maybe<uint> { return nothing; }
+    virtual auto videoRefresh(const uint32*, uint, uint, uint) -> void {}
+    virtual auto audioSample(const double*, uint) -> void {}
+    virtual auto inputPoll(uint, uint, uint) -> int16 { return 0; }
+    virtual auto inputRumble(uint, uint, uint, bool) -> void {}
+    virtual auto dipSettings(Markup::Node) -> uint { return 0; }
     virtual auto notify(string text) -> void { print(text, "\n"); }
   };
   Bind* bind = nullptr;
 
   //callback bindings (provided by user interface)
-  auto loadRequest(unsigned id, string name, string type) -> void { return bind->loadRequest(id, name, type); }
-  auto loadRequest(unsigned id, string path) -> void { return bind->loadRequest(id, path); }
-  auto saveRequest(unsigned id, string path) -> void { return bind->saveRequest(id, path); }
-  auto videoColor(unsigned source, uint16_t alpha, uint16_t red, uint16_t green, uint16_t blue) -> uint32_t { return bind->videoColor(source, alpha, red, green, blue); }
-  auto videoRefresh(const uint32_t* palette, const uint32_t* data, unsigned pitch, unsigned width, unsigned height) -> void { return bind->videoRefresh(palette, data, pitch, width, height); }
-  auto audioSample(int16_t lsample, int16_t rsample) -> void { return bind->audioSample(lsample, rsample); }
-  auto inputPoll(unsigned port, unsigned device, unsigned input) -> int16_t { return bind->inputPoll(port, device, input); }
-  auto inputRumble(unsigned port, unsigned device, unsigned input, bool enable) -> void { return bind->inputRumble(port, device, input, enable); }
-  auto dipSettings(const Markup::Node& node) -> unsigned { return bind->dipSettings(node); }
-  auto path(unsigned group) -> string { return bind->path(group); }
+  auto path(uint id) -> string { return bind->path(id); }
+  auto open(uint id, string name, vfs::file::mode mode, bool required = false) -> vfs::shared::file { return bind->open(id, name, mode, required); }
+  auto load(uint id, string name, string type) -> maybe<uint> { return bind->load(id, name, type); }
+  auto videoRefresh(const uint32* data, uint pitch, uint width, uint height) -> void { return bind->videoRefresh(data, pitch, width, height); }
+  auto audioSample(const double* samples, uint channels) -> void { return bind->audioSample(samples, channels); }
+  auto inputPoll(uint port, uint device, uint input) -> int16 { return bind->inputPoll(port, device, input); }
+  auto inputRumble(uint port, uint device, uint input, bool enable) -> void { return bind->inputRumble(port, device, input, enable); }
+  auto dipSettings(Markup::Node node) -> uint { return bind->dipSettings(node); }
   template<typename... P> auto notify(P&&... p) -> void { return bind->notify({forward<P>(p)...}); }
 
   //information
+  virtual auto manifest() -> string = 0;
   virtual auto title() -> string = 0;
+
+  //video information
   virtual auto videoFrequency() -> double = 0;
+  virtual auto videoColors() -> uint32 = 0;
+  virtual auto videoColor(uint32 color) -> uint64 = 0;
+
+  //audio information
   virtual auto audioFrequency() -> double = 0;
 
   //media interface
   virtual auto loaded() -> bool { return false; }
   virtual auto sha256() -> string { return ""; }
-  virtual auto group(unsigned id) -> unsigned = 0;
-  virtual auto load(unsigned id) -> void {}
+  virtual auto load(uint id) -> bool { return false; }
   virtual auto save() -> void {}
-  virtual auto load(unsigned id, const stream& memory) -> void {}
-  virtual auto save(unsigned id, const stream& memory) -> void {}
   virtual auto unload() -> void {}
 
   //system interface
-  virtual auto connect(unsigned port, unsigned device) -> void {}
+  virtual auto connect(uint port, uint device) -> void {}
   virtual auto power() -> void {}
   virtual auto reset() -> void {}
   virtual auto run() -> void {}
@@ -104,13 +99,23 @@ struct Interface {
   virtual auto unserialize(serializer&) -> bool = 0;
 
   //cheat functions
-  virtual auto cheatSet(const lstring& = lstring{}) -> void {}
+  virtual auto cheatSet(const string_vector& = {}) -> void {}
 
-  //utility functions
-  enum class PaletteMode : unsigned { Literal, Channel, Standard, Emulation };
-  virtual auto paletteUpdate(PaletteMode mode) -> void {}
+  //settings
+  virtual auto cap(const string& name) -> bool { return false; }
+  virtual auto get(const string& name) -> any { return {}; }
+  virtual auto set(const string& name, const any& value) -> bool { return false; }
+
+  //shared functions
+  auto videoColor(uint16 r, uint16 g, uint16 b) -> uint32;
+};
+
+//nall/vfs shorthand constants for open(), load()
+struct File {
+  static const auto Read = vfs::file::mode::read;
+  static const auto Write = vfs::file::mode::write;
+  static const auto Optional = false;
+  static const auto Required = true;
 };
 
 }
-
-#endif

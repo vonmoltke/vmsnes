@@ -1,5 +1,3 @@
-#ifdef PROCESSOR_ARM_HPP
-
 auto ARM::arm_opcode(uint32 rm) {
   uint4 opcode = instruction() >> 21;
   uint1 save = instruction() >> 20;
@@ -29,7 +27,7 @@ auto ARM::arm_opcode(uint32 rm) {
 
   if(exceptionMode() && d == 15 && save) {
     cpsr() = spsr();
-    processor.setMode((Processor::Mode)cpsr().m);
+    processor.setMode((Processor::Mode)(uint)cpsr().m);
   }
 }
 
@@ -50,7 +48,7 @@ auto ARM::arm_move_to_status(uint32 rm) {
       psr.f = rm & 0x00000040;
       psr.t = rm & 0x00000020;
       psr.m = rm & 0x0000001f;
-      if(source == 0) processor.setMode((Processor::Mode)psr.m);
+      if(source == 0) processor.setMode((Processor::Mode)(uint)psr.m);
     }
   }
 
@@ -164,13 +162,15 @@ auto ARM::arm_op_move_half_register() {
 
   uint32 rn = r(n);
   uint32 rm = r(m);
+  uint32 rd = r(d);
 
   if(pre == 1) rn = up ? rn + rm : rn - rm;
-  if(l == 1) r(d) = load(Half | Nonsequential, rn);
-  if(l == 0) store(Half | Nonsequential, rn, r(d));
+  if(l == 1) rd = load(Half | Nonsequential, rn);
+  if(l == 0) store(Half | Nonsequential, rn, rd);
   if(pre == 0) rn = up ? rn + rm : rn - rm;
 
   if(pre == 0 || writeback == 1) r(n) = rn;
+  if(l == 1) r(d) = rd;
 }
 
 //(ldr,str){condition}h rd,[rn{,+/-offset}]{!}
@@ -196,14 +196,16 @@ auto ARM::arm_op_move_half_immediate() {
   uint4 il = instruction();
 
   uint32 rn = r(n);
+  uint32 rd = r(d);
   uint8 immediate = (ih << 4) + (il << 0);
 
   if(pre == 1) rn = up ? rn + immediate : rn - immediate;
-  if(l == 1) r(d) = load(Half | Nonsequential, rn);
-  if(l == 0) store(Half | Nonsequential, rn, r(d));
+  if(l == 1) rd = load(Half | Nonsequential, rn);
+  if(l == 0) store(Half | Nonsequential, rn, rd);
   if(pre == 0) rn = up ? rn + immediate : rn - immediate;
 
   if(pre == 0 || writeback == 1) r(n) = rn;
+  if(l == 1) r(d) = rd;
 }
 
 //ldr{condition}s(h,b) rd,[rn,rm]{!}
@@ -228,13 +230,14 @@ auto ARM::arm_op_load_register() {
 
   uint32 rn = r(n);
   uint32 rm = r(m);
+  uint32 rd = r(d);
 
   if(pre == 1) rn = up ? rn + rm : rn - rm;
-  uint32 word = load((half ? Half : Byte) | Nonsequential, rn);
-  r(d) = half ? (int16)word : (int8)word;
+  rd = load((half ? Half : Byte) | Nonsequential | Signed, rn);
   if(pre == 0) rn = up ? rn + rm : rn - rm;
 
   if(pre == 0 || writeback == 1) r(n) = rn;
+  r(d) = rd;
 }
 
 //ldr{condition}s(h,b) rd,[rn{,+/-offset}]{!}
@@ -260,14 +263,15 @@ auto ARM::arm_op_load_immediate() {
   uint4 il = instruction();
 
   uint32 rn = r(n);
+  uint32 rd = r(d);
   uint8 immediate = (ih << 4) + (il << 0);
 
   if(pre == 1) rn = up ? rn + immediate : rn - immediate;
-  uint32 word = load((half ? Half : Byte) | Nonsequential, rn);
-  r(d) = half ? (int16)word : (int8)word;
+  rd = load((half ? Half : Byte) | Nonsequential | Signed, rn);
   if(pre == 0) rn = up ? rn + immediate : rn - immediate;
 
   if(pre == 0 || writeback == 1) r(n) = rn;
+  r(d) = rd;
 }
 
 //mrs{condition} rd,(c,s)psr
@@ -350,8 +354,8 @@ auto ARM::arm_op_data_immediate_shift() {
   carryout() = cpsr().c;
 
   if(mode == 0) rm = lsl(rm, rs);
-  if(mode == 1) rm = lsr(rm, rs ? rs : 32);
-  if(mode == 2) rm = asr(rm, rs ? rs : 32);
+  if(mode == 1) rm = lsr(rm, rs ? rs : (uint32)32);
+  if(mode == 2) rm = asr(rm, rs ? rs : (uint32)32);
   if(mode == 3) rm = rs ? ror(rm, rs) : rrx(rm);
 
   arm_opcode(rm);
@@ -375,13 +379,13 @@ auto ARM::arm_op_data_register_shift() {
   uint2 mode = instruction() >> 5;
   uint4 m = instruction();
 
-  uint8 rs = r(s);
-  uint32 rm = r(m);
+  uint8 rs = r(s) + (s == 15 ? 4 : 0);
+  uint32 rm = r(m) + (m == 15 ? 4 : 0);
   carryout() = cpsr().c;
 
-  if(mode == 0      ) rm = lsl(rm, rs < 33 ? rs : 33);
-  if(mode == 1      ) rm = lsr(rm, rs < 33 ? rs : 33);
-  if(mode == 2      ) rm = asr(rm, rs < 32 ? rs : 32);
+  if(mode == 0      ) rm = lsl(rm, rs < 33 ? rs : (uint8)33);
+  if(mode == 1      ) rm = lsr(rm, rs < 33 ? rs : (uint8)33);
+  if(mode == 2      ) rm = asr(rm, rs < 32 ? rs : (uint8)32);
   if(mode == 3 && rs) rm = ror(rm, rs & 31 == 0 ? 32 : rs & 31);
 
   arm_opcode(rm);
@@ -434,7 +438,7 @@ auto ARM::arm_op_move_immediate_offset() {
   uint12 rm = instruction();
 
   uint32 rn = r(n);
-  auto& rd = r(d);
+  uint32 rd = r(d);
 
   if(pre == 1) rn = up ? rn + rm : rn - rm;
   if(l == 1) rd = load((byte ? Byte : Word) | Nonsequential, rn);
@@ -442,6 +446,7 @@ auto ARM::arm_op_move_immediate_offset() {
   if(pre == 0) rn = up ? rn + rm : rn - rm;
 
   if(pre == 0 || writeback == 1) r(n) = rn;
+  if(l == 1) r(d) = rd;
 }
 
 //(ldr,str){condition}{b} rd,[rn,rm {mode} #immediate]{!}
@@ -471,14 +476,14 @@ auto ARM::arm_op_move_register_offset() {
   uint4 m = instruction();
 
   uint32 rn = r(n);
-  auto& rd = r(d);
+  uint32 rd = r(d);
   uint32 rs = immediate;
   uint32 rm = r(m);
   bool c = cpsr().c;
 
   if(mode == 0) rm = lsl(rm, rs);
-  if(mode == 1) rm = lsr(rm, rs ? rs : 32);
-  if(mode == 2) rm = asr(rm, rs ? rs : 32);
+  if(mode == 1) rm = lsr(rm, rs ? rs : (uint32)32);
+  if(mode == 2) rm = asr(rm, rs ? rs : (uint32)32);
   if(mode == 3) rm = rs ? ror(rm, rs) : rrx(rm);
 
   if(pre == 1) rn = up ? rn + rm : rn - rm;
@@ -487,6 +492,7 @@ auto ARM::arm_op_move_register_offset() {
   if(pre == 0) rn = up ? rn + rm : rn - rm;
 
   if(pre == 0 || writeback == 1) r(n) = rn;
+  if(l == 1) r(d) = rd;
 }
 
 //(ldm,stm){condition}{mode} rn{!},{r...}
@@ -514,15 +520,19 @@ auto ARM::arm_op_move_multiple() {
   if(pre == 1 && up == 0) rn = rn - bit::count(list) * 4 + 0;  //DB
   if(pre == 0 && up == 0) rn = rn - bit::count(list) * 4 + 4;  //DA
 
+  if(writeback && l == 1) {
+    if(up == 1) r(n) = r(n) + bit::count(list) * 4;  //IA, IB
+    if(up == 0) r(n) = r(n) - bit::count(list) * 4;  //DA, DB
+  }
+
   Processor::Mode pmode = mode();
   bool usr = false;
   if(s && l == 1 && (list & 0x8000) == 0) usr = true;
   if(s && l == 0) usr = true;
-
   if(usr) processor.setMode(Processor::Mode::USR);
 
-  unsigned sequential = Nonsequential;
-  for(unsigned m = 0; m < 16; m++) {
+  uint sequential = Nonsequential;
+  for(uint m : range(16)) {
     if(list & 1 << m) {
       if(l == 1) r(m) = read(Word | sequential, rn);
       if(l == 0) write(Word | sequential, rn, r(m));
@@ -538,14 +548,14 @@ auto ARM::arm_op_move_multiple() {
     if(s && (list & 0x8000)) {
       if(mode() != Processor::Mode::USR && mode() != Processor::Mode::SYS) {
         cpsr() = spsr();
-        processor.setMode((Processor::Mode)cpsr().m);
+        processor.setMode((Processor::Mode)(uint)cpsr().m);
       }
     }
   } else {
     pipeline.nonsequential = true;
   }
 
-  if(writeback) {
+  if(writeback && l == 0) {
     if(up == 1) r(n) = r(n) + bit::count(list) * 4;  //IA, IB
     if(up == 0) r(n) = r(n) - bit::count(list) * 4;  //DA, DB
   }
@@ -573,5 +583,3 @@ auto ARM::arm_op_software_interrupt() {
 
   vector(0x00000008, Processor::Mode::SVC);
 }
-
-#endif

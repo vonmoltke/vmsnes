@@ -3,7 +3,6 @@ HotkeySettings::HotkeySettings(TabFrame* parent) : TabFrameItem(parent) {
   setText("Hotkeys");
 
   layout.setMargin(5);
-  mappingList.setHeaderVisible();
   mappingList.onActivate([&] { assignMapping(); });
   mappingList.onChange([&] {
     eraseButton.setEnabled((bool)mappingList.selected());
@@ -16,7 +15,7 @@ HotkeySettings::HotkeySettings(TabFrame* parent) : TabFrameItem(parent) {
   });
   eraseButton.setText("Erase").onActivate([&] {
     if(auto item = mappingList.selected()) {
-      inputManager->hotkeys[item->offset()]->unbind();
+      inputManager->hotkeys[item.offset()]->unbind();
       refreshMappings();
     }
   });
@@ -27,24 +26,26 @@ HotkeySettings::HotkeySettings(TabFrame* parent) : TabFrameItem(parent) {
 
 auto HotkeySettings::reloadMappings() -> void {
   mappingList.reset();
-  mappingList.append(ListViewColumn().setText("Name"));
-  mappingList.append(ListViewColumn().setText("Mapping").setExpandable());
-  mappingList.append(ListViewColumn().setText("Device"));
+  mappingList.append(TableViewHeader().setVisible()
+    .append(TableViewColumn().setText("Name"))
+    .append(TableViewColumn().setText("Mapping").setExpandable())
+    .append(TableViewColumn().setText("Device").setAlignment(1.0).setForegroundColor({0, 128, 0}))
+  );
   for(auto& hotkey : inputManager->hotkeys) {
-    mappingList.append(ListViewItem()
-      .append(ListViewCell().setText(hotkey->name))
-      .append(ListViewCell())
-      .append(ListViewCell())
+    mappingList.append(TableViewItem()
+      .append(TableViewCell().setText(hotkey->name))
+      .append(TableViewCell())
+      .append(TableViewCell())
     );
   }
   mappingList.resizeColumns();
 }
 
 auto HotkeySettings::refreshMappings() -> void {
-  unsigned position = 0;
+  uint position = 0;
   for(auto& hotkey : inputManager->hotkeys) {
-    mappingList.item(position)->cell(1)->setText(hotkey->assignmentName());
-    mappingList.item(position)->cell(2)->setText(hotkey->deviceName());
+    mappingList.item(position).cell(1).setText(hotkey->assignmentName());
+    mappingList.item(position).cell(2).setText(hotkey->deviceName());
     position++;
   }
   mappingList.resizeColumns();
@@ -54,20 +55,24 @@ auto HotkeySettings::assignMapping() -> void {
   inputManager->poll();  //clear any pending events first
 
   if(auto item = mappingList.selected()) {
-    activeMapping = inputManager->hotkeys[item->offset()];
+    activeMapping = inputManager->hotkeys[item.offset()];
     settingsManager->layout.setEnabled(false);
     settingsManager->statusBar.setText({"Press a key or button to map [", activeMapping->name, "] ..."});
   }
 }
 
-auto HotkeySettings::inputEvent(shared_pointer<HID::Device> device, unsigned group, unsigned input, int16 oldValue, int16 newValue) -> void {
+auto HotkeySettings::inputEvent(shared_pointer<HID::Device> device, uint group, uint input, int16 oldValue, int16 newValue) -> void {
   if(!activeMapping) return;
-  if(!device->isKeyboard() || oldValue != 0 || newValue != 1) return;
+  if(device->isMouse()) return;
 
   if(activeMapping->bind(device, group, input, oldValue, newValue)) {
     activeMapping = nullptr;
-    settingsManager->statusBar.setText("");
-    settingsManager->layout.setEnabled(true);
+    settingsManager->statusBar.setText("Mapping assigned.");
     refreshMappings();
+    timer.onActivate([&] {
+      timer.setEnabled(false);
+      settingsManager->statusBar.setText();
+      settingsManager->layout.setEnabled();
+    }).setInterval(200).setEnabled();
   }
 }

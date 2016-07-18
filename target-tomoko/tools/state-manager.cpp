@@ -3,15 +3,16 @@ StateManager::StateManager(TabFrame* parent) : TabFrameItem(parent) {
   setText("State Manager");
 
   layout.setMargin(5);
-  stateList.append(ListViewColumn().setText("Slot").setForegroundColor({0, 128, 0}).setHorizontalAlignment(1.0));
-  stateList.append(ListViewColumn().setText("Description").setExpandable());
+  stateList.append(TableViewHeader().setVisible()
+    .append(TableViewColumn().setText("Slot").setForegroundColor({0, 128, 0}).setAlignment(1.0))
+    .append(TableViewColumn().setText("Description").setExpandable())
+  );
   for(auto slot : range(Slots)) {
-    stateList.append(ListViewItem()
-      .append(ListViewCell().setText(1 + slot))
-      .append(ListViewCell())
+    stateList.append(TableViewItem()
+      .append(TableViewCell().setText(1 + slot))
+      .append(TableViewCell())
     );
   }
-  stateList.setHeaderVisible();
   stateList.onActivate([&] { doLoad(); });
   stateList.onChange([&] { doChangeSelected(); });
   descriptionLabel.setText("Description:");
@@ -25,7 +26,7 @@ StateManager::StateManager(TabFrame* parent) : TabFrameItem(parent) {
 }
 
 auto StateManager::doUpdateControls() -> void {
-  vector<uint8> buffer;
+  vector<uint8_t> buffer;
   if(auto item = stateList.selected()) {
     buffer = file::read(program->stateName(1 + item.offset(), true));
   }
@@ -42,13 +43,13 @@ auto StateManager::doUpdateControls() -> void {
 }
 
 auto StateManager::doChangeSelected() -> void {
-  vector<uint8> buffer;
+  vector<uint8_t> buffer;
   if(auto item = stateList.selected()) {
     buffer = file::read(program->stateName(1 + item.offset(), true));
     if(buffer.size() >= 584) {
       string description;
       description.reserve(512);
-      memory::copy(description.pointer(), buffer.data() + 72, 512);
+      memory::copy(description.get(), buffer.data() + 72, 512);
       description.resize(description.length());
       descriptionValue.setEnabled(true).setText(description);
       return doUpdateControls();
@@ -65,7 +66,7 @@ auto StateManager::doRefresh() -> void {
     if(buffer.size() >= 584) {
       string description;
       description.reserve(512);
-      memory::copy(description.pointer(), buffer.data() + 72, 512);
+      memory::copy(description.get(), buffer.data() + 72, 512);
       description.resize(description.length());
       stateList.item(slot).cell(1).setText(description).setForegroundColor({0, 0, 0});
     } else {

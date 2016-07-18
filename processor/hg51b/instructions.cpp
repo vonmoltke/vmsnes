@@ -1,6 +1,4 @@
-#ifdef PROCESSOR_HG51B_HPP
-
-void HG51B::push() {
+auto HG51B::push() -> void {
   stack[7] = stack[6];
   stack[6] = stack[5];
   stack[5] = stack[4];
@@ -11,7 +9,7 @@ void HG51B::push() {
   stack[0] = regs.pc;
 }
 
-void HG51B::pull() {
+auto HG51B::pull() -> void {
   regs.pc  = stack[0];
   stack[0] = stack[1];
   stack[1] = stack[2];
@@ -24,7 +22,7 @@ void HG51B::pull() {
 }
 
 //Shift-A: math opcodes can shift A register prior to ALU operation
-unsigned HG51B::sa() {
+auto HG51B::sa() -> uint {
   switch(opcode & 0x0300) { default:
   case 0x0000: return regs.a <<  0;
   case 0x0100: return regs.a <<  1;
@@ -34,18 +32,18 @@ unsigned HG51B::sa() {
 }
 
 //Register-or-Immediate: most opcodes can load from a register or immediate
-unsigned HG51B::ri() {
+auto HG51B::ri() -> uint {
   if(opcode & 0x0400) return opcode & 0xff;
-  return reg_read(opcode & 0xff);
+  return regRead(opcode & 0xff);
 }
 
 //New-PC: determine jump target address; opcode.d9 = long jump flag (1 = yes)
-unsigned HG51B::np() {
+auto HG51B::np() -> uint {
   if(opcode & 0x0200) return (regs.p << 8) | (opcode & 0xff);
   return (regs.pc & 0xffff00) | (opcode & 0xff);
 }
 
-void HG51B::instruction() {
+auto HG51B::instruction() -> void {
   if((opcode & 0xffff) == 0x0000) {
     //0000 0000 0000 0000
     //nop
@@ -117,7 +115,7 @@ void HG51B::instruction() {
   else if((opcode & 0xffff) == 0x4000) {
     //0100 0000 0000 0000
     //rdbus
-    regs.busdata = bus_read(regs.busaddr++);
+    regs.busdata = read(regs.busaddr++);
   }
 
   else if((opcode & 0xf800) == 0x4800) {
@@ -308,7 +306,7 @@ void HG51B::instruction() {
   else if((opcode & 0xff00) == 0xe000) {
     //1110 0000 .... ....
     //st r,a
-    reg_write(opcode & 0xff, regs.a);
+    regWrite(opcode & 0xff, regs.a);
   }
 
   else if((opcode & 0xfb00) == 0xe800) {
@@ -335,10 +333,10 @@ void HG51B::instruction() {
   else if((opcode & 0xff00) == 0xf000) {
     //1111 0000 .... ....
     //swap a,r
-    uint24 source = reg_read(opcode & 0xff);
+    uint24 source = regRead(opcode & 0xff);
     uint24 target = regs.a;
     regs.a = source;
-    reg_write(opcode & 0xff, target);
+    regWrite(opcode & 0xff, target);
   }
 
   else if((opcode & 0xffff) == 0xfc00) {
@@ -348,9 +346,7 @@ void HG51B::instruction() {
   }
 
   else {
-    print("Hitachi DSP: unknown opcode @ ", hex<4>(regs.pc - 1), " = ", hex<4>(opcode), "\n");
+    print("Hitachi DSP: unknown opcode @ ", hex(regs.pc - 1, 4L), " = ", hex(opcode, 4L), "\n");
     regs.halt = true;
   }
 }
-
-#endif

@@ -1,20 +1,23 @@
 #include "tomoko.hpp"
-Video* video = nullptr;
-Audio* audio = nullptr;
-Input* input = nullptr;
+unique_pointer<Video> video;
+unique_pointer<Audio> audio;
+unique_pointer<Input> input;
 Emulator::Interface* emulator = nullptr;
 
-//if file already exists in the same path as the binary; use it (portable mode)
-//if not, use default requested path (*nix/user mode)
-auto locate(string pathname, string filename) -> string {
-  string location = {programpath(), filename};
-  if(storage::exists(location)) return location;
-  return {pathname, filename};
+auto locate(string name) -> string {
+  string location = {Path::program(), name};
+  if(inode::exists(location)) return location;
+
+  location = {Path::config(), "higan/", name};
+  if(inode::exists(location)) return location;
+
+  directory::create({Path::local(), "higan/"});
+  return {Path::local(), "higan/", name};
 }
 
 #include <nall/main.hpp>
-auto nall::main(lstring args) -> void {
-  Application::setName("tomoko");
-  new Program;
+auto nall::main(string_vector args) -> void {
+  Application::setName("higan");
+  new Program(args);
   Application::run();
 }

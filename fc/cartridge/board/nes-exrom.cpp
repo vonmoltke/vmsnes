@@ -1,53 +1,51 @@
 struct NES_ExROM : Board {
+  NES_ExROM(Markup::Node& document) : Board(document), mmc5(*this) {
+    revision = Revision::ELROM;
+  }
 
-enum class Revision : unsigned {
-  EKROM,
-  ELROM,
-  ETROM,
-  EWROM,
-} revision;
+  auto main() -> void {
+    mmc5.main();
+  }
 
-MMC5 mmc5;
+  auto readPRG(uint addr) -> uint8 {
+    return mmc5.readPRG(addr);
+  }
 
-void main() {
-  mmc5.main();
-}
+  auto writePRG(uint addr, uint8 data) -> void {
+    mmc5.writePRG(addr, data);
+  }
 
-uint8 prg_read(unsigned addr) {
-  return mmc5.prg_read(addr);
-}
+  auto readCHR(uint addr) -> uint8 {
+    return mmc5.readCHR(addr);
+  }
 
-void prg_write(unsigned addr, uint8 data) {
-  mmc5.prg_write(addr, data);
-}
+  auto writeCHR(uint addr, uint8 data) -> void {
+    mmc5.writeCHR(addr, data);
+  }
 
-uint8 chr_read(unsigned addr) {
-  return mmc5.chr_read(addr);
-}
+  auto scanline(uint y) -> void {
+    mmc5.scanline(y);
+  }
 
-void chr_write(unsigned addr, uint8 data) {
-  mmc5.chr_write(addr, data);
-}
+  auto power() -> void {
+    mmc5.power();
+  }
 
-void scanline(unsigned y) {
-  mmc5.scanline(y);
-}
+  auto reset() -> void {
+    mmc5.reset();
+  }
 
-void power() {
-  mmc5.power();
-}
+  auto serialize(serializer& s) -> void {
+    Board::serialize(s);
+    mmc5.serialize(s);
+  }
 
-void reset() {
-  mmc5.reset();
-}
+  enum class Revision : uint {
+    EKROM,
+    ELROM,
+    ETROM,
+    EWROM,
+  } revision;
 
-void serialize(serializer& s) {
-  Board::serialize(s);
-  mmc5.serialize(s);
-}
-
-NES_ExROM(Markup::Node& document) : Board(document), mmc5(*this) {
-  revision = Revision::ELROM;
-}
-
+  MMC5 mmc5;
 };

@@ -1,77 +1,81 @@
-alwaysinline auto op_readpc() -> uint8 {
-  return op_read((regs.pc.b << 16) + regs.pc.w++);
+alwaysinline auto readPC() -> uint8 {
+  return read(r.pc.b << 16 | uint16(r.pc.w++));
 }
 
-alwaysinline auto op_readstack() -> uint8 {
-  regs.e ? regs.s.l++ : regs.s.w++;
-  return op_read(regs.s.w);
+alwaysinline auto readSP() -> uint8 {
+  r.e ? r.s.l++ : r.s.w++;
+  return read(r.s.w);
 }
 
-alwaysinline auto op_readstackn() -> uint8 {
-  return op_read(++regs.s.w);
+alwaysinline auto readSPn() -> uint8 {
+  return read(++r.s.w);
 }
 
-alwaysinline auto op_readaddr(uint32 addr) -> uint8 {
-  return op_read(addr & 0xffff);
+alwaysinline auto readAddr(uint addr) -> uint8 {
+  return read(uint16(addr));
 }
 
-alwaysinline auto op_readlong(uint32 addr) -> uint8 {
-  return op_read(addr & 0xffffff);
+alwaysinline auto readLong(uint addr) -> uint8 {
+  return read(uint24(addr));
 }
 
-alwaysinline auto op_readdbr(uint32 addr) -> uint8 {
-  return op_read(((regs.db << 16) + addr) & 0xffffff);
+alwaysinline auto readDB(uint addr) -> uint8 {
+  return read(uint24((r.db << 16) + addr));  //DB can cross page boundaries
 }
 
-alwaysinline auto op_readpbr(uint32 addr) -> uint8 {
-  return op_read((regs.pc.b << 16) + (addr & 0xffff));
+alwaysinline auto readPB(uint addr) -> uint8 {
+  return read(r.pc.b << 16 | uint16(addr));  //PB cannot cross page boundaries
 }
 
-alwaysinline auto op_readdp(uint32 addr) -> uint8 {
-  if(regs.e && regs.d.l == 0x00) {
-    return op_read((regs.d & 0xff00) + ((regs.d + (addr & 0xffff)) & 0xff));
+alwaysinline auto readDP(uint addr) -> uint8 {
+  if(r.e && r.d.l == 0x00) {
+    return read(r.d | uint8(addr));
   } else {
-    return op_read((regs.d + (addr & 0xffff)) & 0xffff);
+    return read(uint16(r.d + addr));
   }
 }
 
-alwaysinline auto op_readsp(uint32 addr) -> uint8 {
-  return op_read((regs.s + (addr & 0xffff)) & 0xffff);
+alwaysinline auto readDPn(uint addr) -> uint8 {
+  return read(uint16(r.d + addr));
 }
 
-alwaysinline auto op_writestack(uint8 data) -> void {
-  op_write(regs.s.w, data);
-  regs.e ? regs.s.l-- : regs.s.w--;
+alwaysinline auto readSP(uint addr) -> uint8 {
+  return read(uint16(r.s + addr));
 }
 
-alwaysinline auto op_writestackn(uint8 data) -> void {
-  op_write(regs.s.w--, data);
+alwaysinline auto writeSP(uint8 data) -> void {
+  write(r.s.w, data);
+  r.e ? r.s.l-- : r.s.w--;
 }
 
-alwaysinline auto op_writeaddr(uint32 addr, uint8 data) -> void {
-  op_write(addr & 0xffff, data);
+alwaysinline auto writeSPn(uint8 data) -> void {
+  write(r.s.w--, data);
 }
 
-alwaysinline auto op_writelong(uint32 addr, uint8 data) -> void {
-  op_write(addr & 0xffffff, data);
+alwaysinline auto writeAddr(uint addr, uint8 data) -> void {
+  write(uint16(addr), data);
 }
 
-alwaysinline auto op_writedbr(uint32 addr, uint8 data) -> void {
-  op_write(((regs.db << 16) + addr) & 0xffffff, data);
+alwaysinline auto writeLong(uint addr, uint8 data) -> void {
+  write(uint24(addr), data);
 }
 
-alwaysinline auto op_writepbr(uint32 addr, uint8 data) -> void {
-  op_write((regs.pc.b << 16) + (addr & 0xffff), data);
+alwaysinline auto writeDB(uint addr, uint8 data) -> void {
+  write(uint24((r.db << 16) + addr), data);
 }
 
-alwaysinline auto op_writedp(uint32 addr, uint8 data) -> void {
-  if(regs.e && regs.d.l == 0x00) {
-    op_write((regs.d & 0xff00) + ((regs.d + (addr & 0xffff)) & 0xff), data);
+alwaysinline auto writePB(uint addr, uint8 data) -> void {
+  write(r.pc.b << 16 | uint16(addr), data);
+}
+
+alwaysinline auto writeDP(uint addr, uint8 data) -> void {
+  if(r.e && r.d.l == 0x00) {
+    write(r.d | uint8(addr), data);
   } else {
-    op_write((regs.d + (addr & 0xffff)) & 0xffff, data);
+    write(uint16(r.d + addr), data);
   }
 }
 
-alwaysinline auto op_writesp(uint32 addr, uint8 data) -> void {
-  op_write((regs.s + (addr & 0xffff)) & 0xffff, data);
+alwaysinline auto writeSP(uint addr, uint8 data) -> void {
+  write(uint16(r.s + addr), data);
 }

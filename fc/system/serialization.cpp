@@ -1,60 +1,65 @@
-serializer System::serialize() {
-  serializer s(serialize_size);
+auto System::serialize() -> serializer {
+  serializer s(_serializeSize);
 
-  unsigned signature = 0x31545342, version = Info::SerializerVersion;
-  char hash[64], description[512];
-  memcpy(&hash, (const char*)cartridge.sha256(), 64);
-  memset(&description, 0, sizeof description);
+  uint signature = 0x31545342;
+  char version[16] = {0};
+  char hash[64] = {0};
+  char description[512] = {0};
+  memory::copy(&version, (const char*)Emulator::SerializerVersion, Emulator::SerializerVersion.size());
+  memory::copy(&hash, (const char*)cartridge.sha256(), 64);
 
   s.integer(signature);
-  s.integer(version);
+  s.array(version);
   s.array(hash);
   s.array(description);
 
-  serialize_all(s);
+  serializeAll(s);
   return s;
 }
 
-bool System::unserialize(serializer& s) {
-  unsigned signature, version;
-  char hash[64], description[512];
+auto System::unserialize(serializer& s) -> bool {
+  uint signature;
+  char version[16];
+  char hash[64];
+  char description[512];
 
   s.integer(signature);
-  s.integer(version);
+  s.array(version);
   s.array(hash);
   s.array(description);
 
   if(signature != 0x31545342) return false;
-  if(version != Info::SerializerVersion) return false;
+  if(string{version} != Emulator::SerializerVersion) return false;
 
   power();
-  serialize_all(s);
+  serializeAll(s);
   return true;
 }
 
-void System::serialize(serializer& s) {
+auto System::serialize(serializer& s) -> void {
 }
 
-void System::serialize_all(serializer& s) {
+auto System::serializeAll(serializer& s) -> void {
   system.serialize(s);
-  input.serialize(s);
   cartridge.serialize(s);
   cpu.serialize(s);
   apu.serialize(s);
   ppu.serialize(s);
 }
 
-void System::serialize_init() {
+auto System::serializeInit() -> void {
   serializer s;
 
-  unsigned signature = 0, version = 0;
-  char hash[64], description[512];
+  uint signature = 0;
+  char version[16];
+  char hash[64];
+  char description[512];
 
   s.integer(signature);
-  s.integer(version);
+  s.array(version);
   s.array(hash);
   s.array(description);
 
-  serialize_all(s);
-  serialize_size = s.size();
+  serializeAll(s);
+  _serializeSize = s.size();
 }

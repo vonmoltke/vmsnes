@@ -1,82 +1,60 @@
-//request from emulation core to load non-volatile media folder
-auto Program::loadRequest(unsigned id, string name, string type) -> void {
-  string location = BrowserDialog()
-  .setTitle({"Load ", name})
-  .setPath({config->library.location, name})
-  .setFilters({string{name, "|*.", type}})
-  .openFolder();
-  if(!directory::exists(location)) return;
-
-  mediaPaths(id) = location;
-  folderPaths.append(location);
-  emulator->load(id);
+auto Program::path(uint id) -> string {
+  return mediumPaths(id);
 }
 
-//request from emulation core to load non-volatile media file
-auto Program::loadRequest(unsigned id, string path) -> void {
-  string location = {mediaPaths(emulator->group(id)), path};
-  if(!file::exists(location)) return;
-  mmapstream stream{location};
-  return emulator->load(id, stream);
-}
-
-//request from emulation core to save non-volatile media file
-auto Program::saveRequest(unsigned id, string path) -> void {
-  string location = {mediaPaths(emulator->group(id)), path};
-  filestream stream{location, file::mode::write};
-  return emulator->save(id, stream);
-}
-
-auto Program::videoColor(unsigned source, uint16 a, uint16 r, uint16 g, uint16 b) -> uint32 {
-  if(config->video.saturation != 100) {
-    uint16 grayscale = uclamp<16>((r + g + b) / 3);
-    double saturation = config->video.saturation * 0.01;
-    double inverse = max(0.0, 1.0 - saturation);
-    r = uclamp<16>(r * saturation + grayscale * inverse);
-    g = uclamp<16>(g * saturation + grayscale * inverse);
-    b = uclamp<16>(b * saturation + grayscale * inverse);
+auto Program::open(uint id, string name, vfs::file::mode mode, bool required) -> vfs::shared::file {
+  if(name == "manifest.bml" && !path(id).endsWith(".sys/")) {
+    if(!file::exists({path(id), name}) || settings["Library/IgnoreManifests"].boolean()) {
+      if(auto manifest = execute("icarus", "--manifest", path(id))) {
+        return vfs::memory::file::open(manifest.output.data<uint8_t>(), manifest.output.size());
+      }
+    }
   }
 
-  if(config->video.gamma != 100) {
-    double exponent = config->video.gamma * 0.01;
-    double reciprocal = 1.0 / 32767.0;
-    r = r > 32767 ? r : 32767 * pow(r * reciprocal, exponent);
-    g = g > 32767 ? g : 32767 * pow(g * reciprocal, exponent);
-    b = b > 32767 ? b : 32767 * pow(b * reciprocal, exponent);
+  if(auto result = vfs::fs::file::open({path(id), name}, mode)) return result;
+
+  if(required) {
+    MessageDialog()
+    .setTitle({"Error"})
+    .setText({"Error: missing required file:\n\n", path(id), name})
+    .error();
   }
 
-  if(config->video.luminance != 100) {
-    double luminance = config->video.luminance * 0.01;
-    r = r * luminance;
-    g = g * luminance;
-    b = b * luminance;
-  }
-
-  a >>= 8;
-  r >>= 8;
-  g >>= 8;
-  b >>= 8;
-  return a << 24 | r << 16 | g << 8 | b << 0;
+  return {};
 }
 
-auto Program::videoRefresh(const uint32* palette, const uint32* data, unsigned pitch, unsigned width, unsigned height) -> void {
-  uint32* output;
-  unsigned length;
+auto Program::load(uint id, string name, string type) -> maybe<uint> {
+  string location;
+  if(mediumQueue) {
+    location = mediumQueue.takeLeft();
+  } else {
+    location = BrowserDialog()
+    .setTitle({"Load ", name})
+    .setPath({settings["Library/Location"].text(), name})
+    .setFilters({string{name, "|*.", type}, "All|*.*"})
+    .openFolder();
+  }
+  if(!directory::exists(location)) return mediumQueue.reset(), nothing;
+
+  uint pathID = mediumPaths.size();
+  mediumPaths.append(location);
+  return pathID;
+}
+
+auto Program::videoRefresh(const uint32* data, uint pitch, uint width, uint height) -> void {
+  uint32_t* output;
+  uint length;
 
   if(video->lock(output, length, width, height)) {
     pitch >>= 2, length >>= 2;
 
     for(auto y : range(height)) {
-      const uint32* sp = data + y * pitch;
-      uint32* dp = output + y * length;
-      for(auto x : range(width)) {
-        *dp++ = palette[*sp++];
-      }
+      memory::copy(output + y * length, data + y * pitch, width * sizeof(uint32));
     }
 
-    if(emulator->information.overscan && config->video.overscan.mask) {
-      unsigned h = config->video.overscan.horizontal;
-      unsigned v = config->video.overscan.vertical;
+    if(emulator->information.overscan && settings["Video/Overscan/Mask"].boolean()) {
+      auto h = settings["Video/Overscan/Horizontal"].natural();
+      auto v = settings["Video/Overscan/Vertical"].natural();
 
       if(h) for(auto y : range(height)) {
         memory::fill(output + y * length, 4 * h);
@@ -93,7 +71,7 @@ auto Program::videoRefresh(const uint32* palette, const uint32* data, unsigned p
     video->refresh();
   }
 
-  static unsigned frameCounter = 0;
+  static uint frameCounter = 0;
   static time_t previous, current;
   frameCounter++;
 
@@ -105,32 +83,29 @@ auto Program::videoRefresh(const uint32* palette, const uint32* data, unsigned p
   }
 }
 
-auto Program::audioSample(int16 lsample, int16 rsample) -> void {
-  signed samples[] = {lsample, rsample};
-  dsp.sample(samples);
-  while(dsp.pending()) {
-    dsp.read(samples);
-    audio->sample(samples[0], samples[1]);
-  }
+auto Program::audioSample(const double* samples, uint channels) -> void {
+  int16 left  = sclamp<16>(samples[0] * 32768.0);
+  int16 right = sclamp<16>(samples[1] * 32768.0);
+  audio->sample(left, right);
 }
 
-auto Program::inputPoll(unsigned port, unsigned device, unsigned input) -> int16 {
-  if(presentation->focused()) {
-    auto guid = emulator->port[port].device[device].input[input].guid;
-    auto mapping = (InputMapping*)guid;
-    if(mapping) return mapping->poll();
+auto Program::inputPoll(uint port, uint device, uint input) -> int16 {
+  if(presentation->focused() || settings["Input/FocusLoss/AllowInput"].boolean()) {
+    auto& mapping = inputManager->emulator->ports[port].devices[device].mappings[input];
+    return mapping.poll();
   }
   return 0;
 }
 
-auto Program::inputRumble(unsigned port, unsigned device, unsigned input, bool enable) -> void {
+auto Program::inputRumble(uint port, uint device, uint input, bool enable) -> void {
+  if(presentation->focused() || settings["Input/FocusLoss/AllowInput"].boolean() || !enable) {
+    auto& mapping = inputManager->emulator->ports[port].devices[device].mappings[input];
+    return mapping.rumble(enable);
+  }
 }
 
-auto Program::dipSettings(const Markup::Node& node) -> unsigned {
-}
-
-auto Program::path(unsigned group) -> string {
-  return mediaPaths(group);
+auto Program::dipSettings(Markup::Node node) -> uint {
+  return 0;
 }
 
 auto Program::notify(string text) -> void {

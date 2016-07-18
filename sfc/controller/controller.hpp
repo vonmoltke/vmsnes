@@ -11,25 +11,24 @@
 //  6:    iobit    $4201.d6 write; $4213.d6 read    $4201.d7 write; $4213.d7 read
 //  7:    gnd
 
-struct Controller : Thread {
+struct Controller : Cothread {
   enum : bool { Port1 = 0, Port2 = 1 };
-  const bool port;
 
-  static void Enter();
-  virtual void enter();
-  void step(unsigned clocks);
-  void synchronize_cpu();
-
-  bool iobit();
-  void iobit(bool data);
-  virtual uint2 data() { return 0; }
-  virtual void latch(bool data) {}
   Controller(bool port);
+  virtual ~Controller();
+  static auto Enter() -> void;
+
+  virtual auto main() -> void;
+  auto iobit() -> bool;
+  auto iobit(bool data) -> void;
+  virtual auto data() -> uint2 { return 0; }
+  virtual auto latch(bool data) -> void {}
+
+  const bool port;
 };
 
 #include "gamepad/gamepad.hpp"
-#include "multitap/multitap.hpp"
 #include "mouse/mouse.hpp"
-#include "superscope/superscope.hpp"
+#include "super-multitap/super-multitap.hpp"
+#include "super-scope/super-scope.hpp"
 #include "justifier/justifier.hpp"
-#include "usart/usart.hpp"

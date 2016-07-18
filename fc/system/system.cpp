@@ -2,78 +2,82 @@
 
 namespace Famicom {
 
+#include "peripherals.cpp"
+#include "video.cpp"
 #include "serialization.cpp"
 System system;
+Scheduler scheduler;
+Cheat cheat;
 
-void System::run() {
-  scheduler.enter();
-  if(scheduler.exit_reason() == Scheduler::ExitReason::FrameEvent) {
-    interface->videoRefresh(video.palette, ppu.buffer, 4 * 256, 256, 240);
+auto System::run() -> void {
+  if(scheduler.enter() == Scheduler::Event::Frame) ppu.refresh();
+}
+
+auto System::runToSave() -> void {
+  scheduler.synchronize(cpu.thread);
+  scheduler.synchronize(apu.thread);
+  scheduler.synchronize(ppu.thread);
+  scheduler.synchronize(cartridge.thread);
+  for(auto peripheral : cpu.peripherals) {
+    scheduler.synchronize(peripheral->thread);
   }
 }
 
-void System::runtosave() {
-  scheduler.sync = Scheduler::SynchronizeMode::PPU;
-  runthreadtosave();
-
-  scheduler.sync = Scheduler::SynchronizeMode::All;
-  scheduler.thread = cpu.thread;
-  runthreadtosave();
-
-  scheduler.sync = Scheduler::SynchronizeMode::All;
-  scheduler.thread = apu.thread;
-  runthreadtosave();
-
-  scheduler.sync = Scheduler::SynchronizeMode::All;
-  scheduler.thread = cartridge.thread;
-  runthreadtosave();
-
-  scheduler.sync = Scheduler::SynchronizeMode::None;
-}
-
-void System::runthreadtosave() {
-  while(true) {
-    scheduler.enter();
-    if(scheduler.exit_reason() == Scheduler::ExitReason::SynchronizeEvent) break;
-    if(scheduler.exit_reason() == Scheduler::ExitReason::FrameEvent) {
-      interface->videoRefresh(video.palette, ppu.buffer, 4 * 256, 256, 240);
-    }
+auto System::load() -> bool {
+  information = Information();
+  if(auto fp = interface->open(ID::System, "manifest.bml", File::Read, File::Required)) {
+    information.manifest = fp->reads();
+  } else {
+    return false;
   }
+  auto document = BML::unserialize(information.manifest);
+  if(!cartridge.load()) return false;
+  information.colorburst = Emulator::Constants::Colorburst::NTSC;
+  serializeInit();
+  return information.loaded = true;
 }
 
-void System::load() {
-  string manifest = string::read({interface->path(ID::System), "manifest.bml"});
-  auto document = BML::unserialize(manifest);
-
-  serialize_init();
+auto System::save() -> void {
+  cartridge.save();
 }
 
-void System::power() {
+auto System::unload() -> void {
+  if(!loaded()) return;
+  peripherals.unload();
+  cartridge.unload();
+  information.loaded = false;
+}
+
+auto System::power() -> void {
   cartridge.power();
   cpu.power();
   apu.power();
   ppu.power();
-  input.reset();
-  scheduler.power();
   reset();
 }
 
-void System::reset() {
+auto System::reset() -> void {
+  Emulator::video.reset();
+  Emulator::video.setInterface(interface);
+  configureVideoPalette();
+  configureVideoEffects();
+
+  Emulator::audio.reset();
+  Emulator::audio.setInterface(interface);
+
   cartridge.reset();
   cpu.reset();
   apu.reset();
   ppu.reset();
-  input.reset();
-  scheduler.reset();
+  scheduler.reset(cpu.thread);
+  peripherals.reset();
 }
 
-void System::init() {
-  assert(interface != 0);
-  input.connect(0, Input::Device::Joypad);
-  input.connect(1, Input::Device::None);
+auto System::init() -> void {
+  assert(interface != nullptr);
 }
 
-void System::term() {
+auto System::term() -> void {
 }
 
 }

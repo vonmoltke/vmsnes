@@ -1,81 +1,67 @@
 struct Interface;
 
-struct System : property<System> {
-  enum class Region : unsigned { NTSC = 0, PAL = 1, Autodetect = 2 };
-  enum class ExpansionPortDevice : unsigned { None = 0, Satellaview = 1 };
+struct System {
+  enum class Region : bool { NTSC = 0, PAL = 1 };
 
-  void run();
-  void runtosave();
+  inline auto loaded() const -> bool { return information.loaded; }
+  inline auto region() const -> Region { return information.region; }
+  inline auto colorburst() const -> double { return information.colorburst; }
 
-  void init();
-  void term();
-  void load();
-  void unload();
-  void power();
-  void reset();
+  auto run() -> void;
+  auto runToSave() -> void;
 
-  void frame();
-  void scanline();
+  auto init() -> void;
+  auto term() -> void;
+  auto load() -> bool;
+  auto save() -> void;
+  auto unload() -> void;
+  auto power() -> void;
+  auto reset() -> void;
 
-  //return *active* system information (settings are cached upon power-on)
-  readonly<Region> region;
-  readonly<ExpansionPortDevice> expansion;
-  readonly<unsigned> cpu_frequency;
-  readonly<unsigned> apu_frequency;
-  readonly<unsigned> serialize_size;
+  //video.cpp
+  auto configureVideoPalette() -> void;
+  auto configureVideoEffects() -> void;
 
-  serializer serialize();
-  bool unserialize(serializer&);
-
-  System();
+  //serialization.cpp
+  auto serialize() -> serializer;
+  auto unserialize(serializer&) -> bool;
 
 private:
-  void runthreadtosave();
+  struct Information {
+    string manifest;
+    bool loaded = false;
+    Region region = Region::NTSC;
+    double colorburst = 0.0;
+  } information;
 
-  void serialize(serializer&);
-  void serialize_all(serializer&);
-  void serialize_init();
+  uint serializeSize = 0;
+
+  auto serialize(serializer&) -> void;
+  auto serializeAll(serializer&) -> void;
+  auto serializeInit() -> void;
 
   friend class Cartridge;
-  friend class Video;
-  friend class Audio;
-  friend class Input;
+};
+
+struct Peripherals {
+  auto unload() -> void;
+  auto reset() -> void;
+  auto connect(uint port, uint device) -> void;
+
+  Controller* controllerPort1 = nullptr;
+  Controller* controllerPort2 = nullptr;
+  Expansion* expansionPort = nullptr;
+};
+
+struct Random {
+  auto seed(uint seed) -> void;
+  auto operator()(uint result) -> uint;
+  auto serialize(serializer& s) -> void;
+
+private:
+  uint iter = 0;
 };
 
 extern System system;
-
-#include "video.hpp"
-#include "audio.hpp"
-#include "input.hpp"
-
-#include <sfc/scheduler/scheduler.hpp>
-
-struct Configuration {
-  Input::Device controller_port1 = Input::Device::Joypad;
-  Input::Device controller_port2 = Input::Device::Joypad;
-  System::ExpansionPortDevice expansion_port = System::ExpansionPortDevice::Satellaview;
-  System::Region region = System::Region::Autodetect;
-  bool random = true;
-};
-
-extern Configuration configuration;
-
-struct Random {
-  void seed(unsigned seed) {
-    iter = seed;
-  }
-
-  unsigned operator()(unsigned result) {
-    if(configuration.random == false) return result;
-    return iter = (iter >> 1) ^ (((iter & 1) - 1) & 0xedb88320);
-  }
-
-  void serialize(serializer& s) {
-    s.integer(iter);
-  }
-
-private:
-  unsigned iter = 0;
-};
-
+extern Peripherals peripherals;
 extern Random random;

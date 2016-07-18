@@ -4,33 +4,42 @@ VideoSettings::VideoSettings(TabFrame* parent) : TabFrameItem(parent) {
 
   layout.setMargin(5);
 
-  colorAdjustmentLabel.setFont(Font::sans(8, "Bold")).setText("Color Adjustment");
+  colorAdjustmentLabel.setFont(Font().setBold()).setText("Color Adjustment");
   saturationLabel.setText("Saturation:");
-  saturationSlider.setLength(201).setPosition(config->video.saturation).onChange([&] { update(); });
+  saturationValue.setAlignment(0.5);
+  saturationSlider.setLength(201).setPosition(settings["Video/Saturation"].natural()).onChange([&] { updateColor(); });
   gammaLabel.setText("Gamma:");
-  gammaSlider.setLength(101).setPosition(config->video.gamma - 100).onChange([&] { update(); });
+  gammaValue.setAlignment(0.5);
+  gammaSlider.setLength(101).setPosition(settings["Video/Gamma"].natural() - 100).onChange([&] { updateColor(); });
   luminanceLabel.setText("Luminance:");
-  luminanceSlider.setLength(101).setPosition(config->video.luminance).onChange([&] { update(); });
+  luminanceValue.setAlignment(0.5);
+  luminanceSlider.setLength(101).setPosition(settings["Video/Luminance"].natural()).onChange([&] { updateColor(); });
 
-  overscanMaskLabel.setFont(Font::sans(8, "Bold")).setText("Overscan Mask");
+  overscanMaskLabel.setFont(Font().setBold()).setText("Overscan Mask");
   horizontalMaskLabel.setText("Horizontal:");
-  horizontalMaskSlider.setLength(17).setPosition(config->video.overscan.horizontal).onChange([&] { update(); });
+  horizontalMaskValue.setAlignment(0.5);
+  horizontalMaskSlider.setLength(17).setPosition(settings["Video/Overscan/Horizontal"].natural()).onChange([&] { updateOverscan(); });
   verticalMaskLabel.setText("Vertical:");
-  verticalMaskSlider.setLength(17).setPosition(config->video.overscan.vertical).onChange([&] { update(); });
+  verticalMaskValue.setAlignment(0.5);
+  verticalMaskSlider.setLength(17).setPosition(settings["Video/Overscan/Vertical"].natural()).onChange([&] { updateOverscan(); });
 
-  update();
+  updateColor();
+  updateOverscan();
 }
 
-auto VideoSettings::update() -> void {
-  config->video.saturation = saturationSlider.position();
-  config->video.gamma = 100 + gammaSlider.position();
-  config->video.luminance = luminanceSlider.position();
-  config->video.overscan.horizontal = horizontalMaskSlider.position();
-  config->video.overscan.vertical = verticalMaskSlider.position();
-  saturationValue.setText({config->video.saturation, "%"});
-  gammaValue.setText({config->video.gamma, "%"});
-  luminanceValue.setText({config->video.luminance, "%"});
-  horizontalMaskValue.setText({config->video.overscan.horizontal, "px"});
-  verticalMaskValue.setText({config->video.overscan.vertical, "px"});
+auto VideoSettings::updateColor() -> void {
+  settings["Video/Saturation"].setValue(saturationSlider.position());
+  settings["Video/Gamma"].setValue(100 + gammaSlider.position());
+  settings["Video/Luminance"].setValue(luminanceSlider.position());
+  saturationValue.setText({saturationSlider.position(), "%"});
+  gammaValue.setText({100 + gammaSlider.position(), "%"});
+  luminanceValue.setText({luminanceSlider.position(), "%"});
   program->updateVideoPalette();
+}
+
+auto VideoSettings::updateOverscan() -> void {
+  settings["Video/Overscan/Horizontal"].setValue(horizontalMaskSlider.position());
+  settings["Video/Overscan/Vertical"].setValue(verticalMaskSlider.position());
+  horizontalMaskValue.setText({horizontalMaskSlider.position(), "px"});
+  verticalMaskValue.setText({verticalMaskSlider.position(), "px"});
 }

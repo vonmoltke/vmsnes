@@ -1,18 +1,28 @@
 struct Justifier : Controller {
-  void enter();
-  uint2 data();
-  void latch(bool data);
+  enum : uint {
+    X, Y, Trigger, Start,
+  };
+
   Justifier(bool port, bool chained);
+  ~Justifier();
+
+  auto main() -> void;
+  auto data() -> uint2;
+  auto latch(bool data) -> void;
 
 //private:
   const bool chained;  //true if the second justifier is attached to the first
-  const unsigned device;
+  const uint device;
   bool latched;
-  unsigned counter;
+  uint counter;
+  uint prev;
 
   bool active;
   struct Player {
-    signed x, y;
-    bool trigger, start;
+    shared_pointer<Emulator::Sprite> sprite;
+    int x;
+    int y;
+    bool trigger;
+    bool start;
   } player1, player2;
 };

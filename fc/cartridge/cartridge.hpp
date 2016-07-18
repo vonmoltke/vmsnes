@@ -1,47 +1,43 @@
 #include "chip/chip.hpp"
 #include "board/board.hpp"
 
-struct Cartridge : Thread, property<Cartridge> {
-  static void Main();
-  void main();
+struct Cartridge : Thread {
+  static auto Enter() -> void;
+  auto main() -> void;
 
-  void load();
-  void unload();
+  auto pathID() const -> uint { return information.pathID; }
+  auto sha256() const -> string { return information.sha256; }
+  auto manifest() const -> string { return information.manifest; }
+  auto title() const -> string { return information.title; }
 
-  void power();
-  void reset();
+  auto load() -> bool;
+  auto save() -> void;
+  auto unload() -> void;
 
-  readonly<bool> loaded;
-  readonly<string> sha256;
+  auto power() -> void;
+  auto reset() -> void;
+
+  auto serialize(serializer&) -> void;
 
   struct Information {
-    string markup;
+    uint pathID = 0;
+    string sha256;
+    string manifest;
     string title;
   } information;
 
-  string title();
-
-  struct Memory {
-    unsigned id;
-    string name;
-  };
-  vector<Memory> memory;
-
-  void serialize(serializer&);
-  Cartridge();
-
 //privileged:
-  Board *board;
+  Board* board = nullptr;
 
-  uint8 prg_read(unsigned addr);
-  void prg_write(unsigned addr, uint8 data);
+  auto readPRG(uint addr) -> uint8;
+  auto writePRG(uint addr, uint8 data) -> void;
 
-  uint8 chr_read(unsigned addr);
-  void chr_write(unsigned addr, uint8 data);
+  auto readCHR(uint addr) -> uint8;
+  auto writeCHR(uint addr, uint8 data) -> void;
 
   //scanline() is for debugging purposes only:
   //boards must detect scanline edges on their own
-  void scanline(unsigned y);
+  auto scanline(uint y) -> void;
 };
 
 extern Cartridge cartridge;

@@ -3,21 +3,21 @@ CheatEditor::CheatEditor(TabFrame* parent) : TabFrameItem(parent) {
   setText("Cheat Editor");
 
   layout.setMargin(5);
-  cheatList.append(ListViewColumn().setText("Slot").setForegroundColor({0, 128, 0}).setHorizontalAlignment(1.0));
-  cheatList.append(ListViewColumn().setText("Code(s)"));
-  cheatList.append(ListViewColumn().setText("Description").setExpandable());
+  cheatList.append(TableViewHeader().setVisible()
+    .append(TableViewColumn().setText("Slot").setForegroundColor({0, 128, 0}).setAlignment(1.0))
+    .append(TableViewColumn().setText("Code(s)"))
+    .append(TableViewColumn().setText("Description").setExpandable())
+  );
   for(auto slot : range(Slots)) {
-    cheatList.append(ListViewItem()
-      .append(ListViewCell().setText(1 + slot))
-      .append(ListViewCell())
-      .append(ListViewCell())
+    cheatList.append(TableViewItem()
+      .append(TableViewCell().setCheckable().setText(1 + slot))
+      .append(TableViewCell())
+      .append(TableViewCell())
     );
   }
-  cheatList.setCheckable();
-  cheatList.setHeaderVisible();
   cheatList.onChange([&] { doChangeSelected(); });
-  cheatList.onToggle([&](ListViewItem item) {
-    cheats[item.offset()].enabled = item.checked();
+  cheatList.onToggle([&](TableViewCell cell) {
+    cheats[cell.parent().offset()].enabled = cell.checked();
     synchronizeCodes();
   });
   codeLabel.setText("Code(s):");
@@ -56,13 +56,13 @@ auto CheatEditor::doRefresh() -> void {
   for(auto slot : range(Slots)) {
     auto& cheat = cheats[slot];
     if(cheat.code || cheat.description) {
-      lstring codes = cheat.code.split("+");
+      auto codes = cheat.code.split("+");
       if(codes.size() > 1) codes[0].append("+...");
-      cheatList.item(slot).setChecked(cheat.enabled);
+      cheatList.item(slot).cell(0).setChecked(cheat.enabled);
       cheatList.item(slot).cell(1).setText(codes[0]);
       cheatList.item(slot).cell(2).setText(cheat.description).setForegroundColor({0, 0, 0});
     } else {
-      cheatList.item(slot).setChecked(false);
+      cheatList.item(slot).cell(0).setChecked(false);
       cheatList.item(slot).cell(1).setText("");
       cheatList.item(slot).cell(2).setText("(empty)").setForegroundColor({128, 128, 128});
     }
@@ -78,7 +78,9 @@ auto CheatEditor::doReset(bool force) -> void {
       cheat.code = "";
       cheat.description = "";
     }
-    cheatList.unselectAll();
+    for(auto& item : cheatList.items()) {
+      item.cell(0).setChecked(false);
+    }
     doChangeSelected();
     doRefresh();
     synchronizeCodes();
@@ -101,7 +103,7 @@ auto CheatEditor::doErase() -> void {
 auto CheatEditor::synchronizeCodes() -> void {
   if(!emulator) return;
 
-  lstring codes;
+  string_vector codes;
   for(auto& cheat : cheats) {
     if(!cheat.enabled || !cheat.code) continue;
     codes.append(cheat.code);
@@ -126,7 +128,7 @@ auto CheatEditor::addCode(const string& code, const string& description, bool en
 
 auto CheatEditor::loadCheats() -> void {
   doReset(true);
-  auto contents = string::read({program->folderPaths[0], "cheats.bml"});
+  auto contents = string::read({program->mediumPaths(1), "cheats.bml"});
   auto document = BML::unserialize(contents);
   for(auto cheat : document["cartridge"].find("cheat")) {
     if(!addCode(cheat["code"].text(), cheat["description"].text(), (bool)cheat["enabled"])) break;
@@ -138,7 +140,7 @@ auto CheatEditor::loadCheats() -> void {
 auto CheatEditor::saveCheats() -> void {
   if(!emulator) return;
   string document = {"cartridge sha256:", emulator->sha256(), "\n"};
-  unsigned count = 0;
+  uint count = 0;
   for(auto& cheat : cheats) {
     if(!cheat.code && !cheat.description) continue;
     document.append("  cheat", cheat.enabled ? " enabled" : "", "\n");
@@ -147,9 +149,9 @@ auto CheatEditor::saveCheats() -> void {
     count++;
   }
   if(count) {
-    file::write({program->folderPaths[0], "cheats.bml"}, document);
+    file::write({program->mediumPaths(1), "cheats.bml"}, document);
   } else {
-    file::remove({program->folderPaths[0], "cheats.bml"});
+    file::remove({program->mediumPaths(1), "cheats.bml"});
   }
   doReset(true);
 }

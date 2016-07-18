@@ -1,71 +1,37 @@
 #include <sfc/sfc.hpp>
 
-#define SYSTEM_CPP
 namespace SuperFamicom {
 
 System system;
-Configuration configuration;
-Random random;
-
+Scheduler scheduler;
+Cheat cheat;
 #include "video.cpp"
-#include "audio.cpp"
-#include "input.cpp"
+#include "peripherals.cpp"
+#include "random.cpp"
 #include "serialization.cpp"
 
-#include <sfc/scheduler/scheduler.cpp>
+auto System::run() -> void {
+  if(scheduler.enter() == Scheduler::Event::Frame) ppu.refresh();
+}
 
-void System::run() {
-  scheduler.sync = Scheduler::SynchronizeMode::None;
-
-  scheduler.enter();
-  if(scheduler.exit_reason() == Scheduler::ExitReason::FrameEvent) {
-    video.update();
+auto System::runToSave() -> void {
+  scheduler.synchronize(cpu.thread);
+  scheduler.synchronize(smp.thread);
+  scheduler.synchronize(ppu.thread);
+  scheduler.synchronize(dsp.thread);
+  for(auto coprocessor : cpu.coprocessors) {
+    scheduler.synchronize(coprocessor->thread);
+  }
+  for(auto peripheral : cpu.peripherals) {
+    scheduler.synchronize(peripheral->thread);
   }
 }
 
-void System::runtosave() {
-  if(CPU::Threaded == true) {
-    scheduler.sync = Scheduler::SynchronizeMode::CPU;
-    runthreadtosave();
-  }
-
-  if(SMP::Threaded == true) {
-    scheduler.thread = smp.thread;
-    runthreadtosave();
-  }
-
-  if(PPU::Threaded == true) {
-    scheduler.thread = ppu.thread;
-    runthreadtosave();
-  }
-
-  if(DSP::Threaded == true) {
-    scheduler.thread = dsp.thread;
-    runthreadtosave();
-  }
-
-  for(unsigned i = 0; i < cpu.coprocessors.size(); i++) {
-    auto& chip = *cpu.coprocessors[i];
-    scheduler.thread = chip.thread;
-    runthreadtosave();
-  }
-}
-
-void System::runthreadtosave() {
-  while(true) {
-    scheduler.enter();
-    if(scheduler.exit_reason() == Scheduler::ExitReason::SynchronizeEvent) break;
-    if(scheduler.exit_reason() == Scheduler::ExitReason::FrameEvent) {
-      video.update();
-    }
-  }
-}
-
-void System::init() {
+auto System::init() -> void {
   assert(interface != nullptr);
 
-  satellaviewbaseunit.init();
-  bsxcartridge.init();
+  icd2.init();
+  mcc.init();
   nss.init();
   event.init();
   sa1.init();
@@ -79,164 +45,168 @@ void System::init() {
   sdd1.init();
   obc1.init();
   msu1.init();
-  satellaviewcartridge.init();
 
-  video.init();
-  audio.init();
-
-  input.connect(0, configuration.controller_port1);
-  input.connect(1, configuration.controller_port2);
+  bsmemory.init();
 }
 
-void System::term() {
+auto System::term() -> void {
 }
 
-void System::load() {
-  string manifest = string::read({interface->path(ID::System), "manifest.bml"});
-  auto document = BML::unserialize(manifest);
+auto System::load() -> bool {
+  information = Information();
 
-  auto iplrom = document["system/smp/rom/name"].text();
-  interface->loadRequest(ID::IPLROM, iplrom);
-  if(!file::exists({interface->path(ID::System), iplrom})) {
-    interface->notify("Error: required Super Famicom firmware ipl.rom not found.\n");
-  }
+  if(auto fp = interface->open(ID::System, "manifest.bml", File::Read, File::Required)) {
+    information.manifest = fp->reads();
+  } else return false;
 
-  region = configuration.region;
-  expansion = configuration.expansion_port;
-  if(region == Region::Autodetect) {
-    region = (cartridge.region() == Cartridge::Region::NTSC ? Region::NTSC : Region::PAL);
-  }
+  auto document = BML::unserialize(information.manifest);
+  auto system = document["system"];
 
-  cpu_frequency = region() == Region::NTSC ? 21477272 : 21281370;
-  apu_frequency = 24607104;
+  bus.reset();
+  if(!cpu.load(system)) return false;
+  if(!smp.load(system)) return false;
+  if(!ppu.load(system)) return false;
+  if(!dsp.load(system)) return false;
+  if(!cartridge.load()) return false;
 
-  audio.coprocessor_enable(false);
+  information.region = cartridge.region() == Cartridge::Region::NTSC ? Region::NTSC : Region::PAL;
+  if(system["region"].text() == "NTSC") information.region = Region::NTSC;
+  if(system["region"].text() == "PAL" ) information.region = Region::PAL;
 
-  bus.map_reset();
-  bus.map_xml();
+  information.colorburst = region() == Region::NTSC
+  ? Emulator::Constants::Colorburst::NTSC
+  : Emulator::Constants::Colorburst::PAL * 4.0 / 5.0;
 
-  cpu.enable();
-  ppu.enable();
+  if(cartridge.has.ICD2) icd2.load();
+  if(cartridge.has.MCC) mcc.load();
+  if(cartridge.has.NSSDIP) nss.load();
+  if(cartridge.has.Event) event.load();
+  if(cartridge.has.SA1) sa1.load();
+  if(cartridge.has.SuperFX) superfx.load();
+  if(cartridge.has.ARMDSP) armdsp.load();
+  if(cartridge.has.HitachiDSP) hitachidsp.load();
+  if(cartridge.has.NECDSP) necdsp.load();
+  if(cartridge.has.EpsonRTC) epsonrtc.load();
+  if(cartridge.has.SharpRTC) sharprtc.load();
+  if(cartridge.has.SPC7110) spc7110.load();
+  if(cartridge.has.SDD1) sdd1.load();
+  if(cartridge.has.OBC1) obc1.load();
+  if(cartridge.has.MSU1) msu1.load();
 
-  if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.load();
-  if(cartridge.has_bs_cart()) bsxcartridge.load();
-  if(cartridge.has_nss_dip()) nss.load();
-  if(cartridge.has_event()) event.load();
-  if(cartridge.has_sa1()) sa1.load();
-  if(cartridge.has_superfx()) superfx.load();
-  if(cartridge.has_armdsp()) armdsp.load();
-  if(cartridge.has_hitachidsp()) hitachidsp.load();
-  if(cartridge.has_necdsp()) necdsp.load();
-  if(cartridge.has_epsonrtc()) epsonrtc.load();
-  if(cartridge.has_sharprtc()) sharprtc.load();
-  if(cartridge.has_spc7110()) spc7110.load();
-  if(cartridge.has_sdd1()) sdd1.load();
-  if(cartridge.has_obc1()) obc1.load();
-  if(cartridge.has_msu1()) msu1.load();
-  if(cartridge.has_bs_slot()) satellaviewcartridge.load();
-  if(cartridge.has_st_slots()) sufamiturboA.load(), sufamiturboB.load();
+  if(cartridge.has.BSMemorySlot) bsmemory.load();
+  if(cartridge.has.SufamiTurboSlots) sufamiturboA.load(), sufamiturboB.load();
 
-  serialize_init();
+  serializeInit();
+  return information.loaded = true;
 }
 
-void System::unload() {
-  if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.unload();
-  if(cartridge.has_bs_cart()) bsxcartridge.unload();
-  if(cartridge.has_nss_dip()) nss.unload();
-  if(cartridge.has_event()) event.unload();
-  if(cartridge.has_sa1()) sa1.unload();
-  if(cartridge.has_superfx()) superfx.unload();
-  if(cartridge.has_armdsp()) armdsp.unload();
-  if(cartridge.has_hitachidsp()) hitachidsp.unload();
-  if(cartridge.has_necdsp()) necdsp.unload();
-  if(cartridge.has_epsonrtc()) epsonrtc.unload();
-  if(cartridge.has_sharprtc()) sharprtc.unload();
-  if(cartridge.has_spc7110()) spc7110.unload();
-  if(cartridge.has_sdd1()) sdd1.unload();
-  if(cartridge.has_obc1()) obc1.unload();
-  if(cartridge.has_msu1()) msu1.unload();
-  if(cartridge.has_bs_slot()) satellaviewcartridge.unload();
-  if(cartridge.has_st_slots()) sufamiturboA.unload(), sufamiturboB.unload();
+auto System::save() -> void {
+  if(!loaded()) return;
+  cartridge.save();
 }
 
-void System::power() {
-  random.seed((unsigned)time(0));
+auto System::unload() -> void {
+  if(!loaded()) return;
+  peripherals.unload();
+
+  if(cartridge.has.ICD2) icd2.unload();
+  if(cartridge.has.MCC) mcc.unload();
+  if(cartridge.has.NSSDIP) nss.unload();
+  if(cartridge.has.Event) event.unload();
+  if(cartridge.has.SA1) sa1.unload();
+  if(cartridge.has.SuperFX) superfx.unload();
+  if(cartridge.has.ARMDSP) armdsp.unload();
+  if(cartridge.has.HitachiDSP) hitachidsp.unload();
+  if(cartridge.has.NECDSP) necdsp.unload();
+  if(cartridge.has.EpsonRTC) epsonrtc.unload();
+  if(cartridge.has.SharpRTC) sharprtc.unload();
+  if(cartridge.has.SPC7110) spc7110.unload();
+  if(cartridge.has.SDD1) sdd1.unload();
+  if(cartridge.has.OBC1) obc1.unload();
+  if(cartridge.has.MSU1) msu1.unload();
+
+  if(cartridge.has.BSMemorySlot) bsmemory.unload();
+  if(cartridge.has.SufamiTurboSlots) sufamiturboA.unload(), sufamiturboB.unload();
+
+  cartridge.unload();
+  information.loaded = false;
+}
+
+auto System::power() -> void {
+  random.seed((uint)time(0));
 
   cpu.power();
   smp.power();
   dsp.power();
   ppu.power();
 
-  if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.power();
-  if(cartridge.has_bs_cart()) bsxcartridge.power();
-  if(cartridge.has_nss_dip()) nss.power();
-  if(cartridge.has_event()) event.power();
-  if(cartridge.has_sa1()) sa1.power();
-  if(cartridge.has_superfx()) superfx.power();
-  if(cartridge.has_armdsp()) armdsp.power();
-  if(cartridge.has_hitachidsp()) hitachidsp.power();
-  if(cartridge.has_necdsp()) necdsp.power();
-  if(cartridge.has_epsonrtc()) epsonrtc.power();
-  if(cartridge.has_sharprtc()) sharprtc.power();
-  if(cartridge.has_spc7110()) spc7110.power();
-  if(cartridge.has_sdd1()) sdd1.power();
-  if(cartridge.has_obc1()) obc1.power();
-  if(cartridge.has_msu1()) msu1.power();
-  if(cartridge.has_bs_slot()) satellaviewcartridge.power();
+  if(cartridge.has.ICD2) icd2.power();
+  if(cartridge.has.MCC) mcc.power();
+  if(cartridge.has.NSSDIP) nss.power();
+  if(cartridge.has.Event) event.power();
+  if(cartridge.has.SA1) sa1.power();
+  if(cartridge.has.SuperFX) superfx.power();
+  if(cartridge.has.ARMDSP) armdsp.power();
+  if(cartridge.has.HitachiDSP) hitachidsp.power();
+  if(cartridge.has.NECDSP) necdsp.power();
+  if(cartridge.has.EpsonRTC) epsonrtc.power();
+  if(cartridge.has.SharpRTC) sharprtc.power();
+  if(cartridge.has.SPC7110) spc7110.power();
+  if(cartridge.has.SDD1) sdd1.power();
+  if(cartridge.has.OBC1) obc1.power();
+  if(cartridge.has.MSU1) msu1.power();
+
+  if(cartridge.has.BSMemorySlot) bsmemory.power();
 
   reset();
 }
 
-void System::reset() {
+auto System::reset() -> void {
+  Emulator::video.reset();
+  Emulator::video.setInterface(interface);
+  configureVideoPalette();
+  configureVideoEffects();
+
+  Emulator::audio.reset();
+  Emulator::audio.setInterface(interface);
+
   cpu.reset();
   smp.reset();
   dsp.reset();
   ppu.reset();
 
-  if(expansion() == ExpansionPortDevice::Satellaview) satellaviewbaseunit.reset();
-  if(cartridge.has_bs_cart()) bsxcartridge.reset();
-  if(cartridge.has_nss_dip()) nss.reset();
-  if(cartridge.has_event()) event.reset();
-  if(cartridge.has_sa1()) sa1.reset();
-  if(cartridge.has_superfx()) superfx.reset();
-  if(cartridge.has_armdsp()) armdsp.reset();
-  if(cartridge.has_hitachidsp()) hitachidsp.reset();
-  if(cartridge.has_necdsp()) necdsp.reset();
-  if(cartridge.has_epsonrtc()) epsonrtc.reset();
-  if(cartridge.has_sharprtc()) sharprtc.reset();
-  if(cartridge.has_spc7110()) spc7110.reset();
-  if(cartridge.has_sdd1()) sdd1.reset();
-  if(cartridge.has_obc1()) obc1.reset();
-  if(cartridge.has_msu1()) msu1.reset();
-  if(cartridge.has_bs_slot()) satellaviewcartridge.reset();
+  if(cartridge.has.ICD2) icd2.reset();
+  if(cartridge.has.MCC) mcc.reset();
+  if(cartridge.has.NSSDIP) nss.reset();
+  if(cartridge.has.Event) event.reset();
+  if(cartridge.has.SA1) sa1.reset();
+  if(cartridge.has.SuperFX) superfx.reset();
+  if(cartridge.has.ARMDSP) armdsp.reset();
+  if(cartridge.has.HitachiDSP) hitachidsp.reset();
+  if(cartridge.has.NECDSP) necdsp.reset();
+  if(cartridge.has.EpsonRTC) epsonrtc.reset();
+  if(cartridge.has.SharpRTC) sharprtc.reset();
+  if(cartridge.has.SPC7110) spc7110.reset();
+  if(cartridge.has.SDD1) sdd1.reset();
+  if(cartridge.has.OBC1) obc1.reset();
+  if(cartridge.has.MSU1) msu1.reset();
 
-  if(cartridge.has_event()) cpu.coprocessors.append(&event);
-  if(cartridge.has_sa1()) cpu.coprocessors.append(&sa1);
-  if(cartridge.has_superfx()) cpu.coprocessors.append(&superfx);
-  if(cartridge.has_armdsp()) cpu.coprocessors.append(&armdsp);
-  if(cartridge.has_hitachidsp()) cpu.coprocessors.append(&hitachidsp);
-  if(cartridge.has_necdsp()) cpu.coprocessors.append(&necdsp);
-  if(cartridge.has_epsonrtc()) cpu.coprocessors.append(&epsonrtc);
-  if(cartridge.has_sharprtc()) cpu.coprocessors.append(&sharprtc);
-  if(cartridge.has_spc7110()) cpu.coprocessors.append(&spc7110);
-  if(cartridge.has_msu1()) cpu.coprocessors.append(&msu1);
+  if(cartridge.has.BSMemorySlot) bsmemory.reset();
 
-  scheduler.init();
-  input.connect(0, configuration.controller_port1);
-  input.connect(1, configuration.controller_port2);
-}
+  if(cartridge.has.ICD2) cpu.coprocessors.append(&icd2);
+  if(cartridge.has.Event) cpu.coprocessors.append(&event);
+  if(cartridge.has.SA1) cpu.coprocessors.append(&sa1);
+  if(cartridge.has.SuperFX) cpu.coprocessors.append(&superfx);
+  if(cartridge.has.ARMDSP) cpu.coprocessors.append(&armdsp);
+  if(cartridge.has.HitachiDSP) cpu.coprocessors.append(&hitachidsp);
+  if(cartridge.has.NECDSP) cpu.coprocessors.append(&necdsp);
+  if(cartridge.has.EpsonRTC) cpu.coprocessors.append(&epsonrtc);
+  if(cartridge.has.SharpRTC) cpu.coprocessors.append(&sharprtc);
+  if(cartridge.has.SPC7110) cpu.coprocessors.append(&spc7110);
+  if(cartridge.has.MSU1) cpu.coprocessors.append(&msu1);
 
-void System::scanline() {
-  video.scanline();
-  if(cpu.vcounter() == 241) scheduler.exit(Scheduler::ExitReason::FrameEvent);
-}
-
-void System::frame() {
-}
-
-System::System() {
-  region = Region::Autodetect;
-  expansion = ExpansionPortDevice::Satellaview;
+  scheduler.reset(cpu.thread);
+  peripherals.reset();
 }
 
 }

@@ -1,6 +1,4 @@
-#ifdef PROCESSOR_HG51B_HPP
-
-uint24 HG51B::reg_read(uint8 addr) const {
+auto HG51B::regRead(uint8 addr) const -> uint24 {
   switch(addr) {
   case 0x00: return regs.a;
   case 0x01: return regs.acch;
@@ -46,7 +44,7 @@ uint24 HG51B::reg_read(uint8 addr) const {
   return 0x000000;
 }
 
-void HG51B::reg_write(uint8 addr, uint24 data) {
+auto HG51B::regWrite(uint8 addr, uint24 data) -> void {
   switch(addr) {
   case 0x00: regs.a = data; return;
   case 0x01: regs.acch = data; return;
@@ -74,5 +72,3 @@ void HG51B::reg_write(uint8 addr, uint24 data) {
   case 0x6f: regs.gpr[15] = data; return;
   }
 }
-
-#endif

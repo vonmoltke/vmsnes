@@ -1,56 +1,56 @@
 struct CPU : Processor::R6502, Thread {
-  uint8 ram[0x0800];
+  static auto Enter() -> void;
+  auto main() -> void;
+  auto step(uint clocks) -> void;
 
-  struct Status {
-    bool interrupt_pending;
-    bool nmi_pending;
-    bool nmi_line;
-    bool irq_line;
-    bool irq_apu_line;
+  auto power() -> void;
+  auto reset() -> void;
 
-    bool rdy_line;
-    bool rdy_addr_valid;
-    uint16 rdy_addr_value;
+  //memory.cpp
+  auto readRAM(uint11 addr) -> uint8;
+  auto writeRAM(uint11 addr, uint8 data) -> void;
 
-    bool oam_dma_pending;
-    uint8 oam_dma_page;
+  auto readIO(uint16 addr) -> uint8;
+  auto writeIO(uint16 addr, uint8 data) -> void;
 
-    bool controller_latch;
-    unsigned controller_port0;
-    unsigned controller_port1;
-  } status;
+  auto readDebugger(uint16 addr) -> uint8 override;
 
-  static void Enter();
-  void main();
-  void add_clocks(unsigned clocks);
-
-  void power();
-  void reset();
-
-  uint8 debugger_read(uint16 addr);
-
-  uint8 ram_read(uint16 addr);
-  void ram_write(uint16 addr, uint8 data);
-
-  uint8 read(uint16 addr);
-  void write(uint16 addr, uint8 data);
-
-  void serialize(serializer&);
+  auto serialize(serializer&) -> void;
 
   //timing.cpp
-  uint8 op_read(uint16 addr);
-  void op_write(uint16 addr, uint8 data);
-  void last_cycle();
-  void nmi(uint16 &vector);
+  auto read(uint16 addr) -> uint8 override;
+  auto write(uint16 addr, uint8 data) -> void override;
+  auto lastCycle() -> void override;
+  auto nmi(uint16& vector) -> void override;
 
-  void oam_dma();
+  auto oamdma() -> void;
 
-  void set_nmi_line(bool);
-  void set_irq_line(bool);
-  void set_irq_apu_line(bool);
+  auto nmiLine(bool) -> void;
+  auto irqLine(bool) -> void;
+  auto apuLine(bool) -> void;
 
-  void set_rdy_line(bool);
-  void set_rdy_addr(bool valid, uint16 value = 0);
+  auto rdyLine(bool) -> void;
+  auto rdyAddr(bool valid, uint16 value = 0) -> void;
+
+//protected:
+  vector<Thread*> peripherals;
+
+  uint8 ram[0x0800];
+
+  struct IO {
+    bool interruptPending;
+    bool nmiPending;
+    bool nmiLine;
+    bool irqLine;
+    bool apuLine;
+
+    bool rdyLine;
+    bool rdyAddrValid;
+    uint16 rdyAddrValue;
+
+    bool oamdmaPending;
+    uint8 oamdmaPage;
+  } io;
 };
 
 extern CPU cpu;

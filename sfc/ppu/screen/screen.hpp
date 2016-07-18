@@ -1,48 +1,47 @@
 struct Screen {
-  uint32* output;
+  auto scanline() -> void;
+  alwaysinline auto run() -> void;
+  auto reset() -> void;
 
-  struct Regs {
-    bool addsub_mode;
-    bool direct_color;
+  auto below(bool hires) -> uint16;
+  auto above() -> uint16;
 
-    bool color_mode;
-    bool color_halve;
-    bool bg1_color_enable;
-    bool bg2_color_enable;
-    bool bg3_color_enable;
-    bool bg4_color_enable;
-    bool oam_color_enable;
-    bool back_color_enable;
+  auto blend(uint x, uint y) const -> uint15;
+  alwaysinline auto paletteColor(uint8 palette) const -> uint15;
+  alwaysinline auto directColor(uint palette, uint tile) const -> uint15;
+  alwaysinline auto fixedColor() const -> uint15;
 
-    uint5 color_b;
-    uint5 color_g;
-    uint5 color_r;
-  } regs;
+  auto serialize(serializer&) -> void;
+
+  uint32* lineA;
+  uint32* lineB;
+
+  uint15 cgram[256];
+
+  struct IO {
+    bool blendMode;
+    bool directColor;
+
+    bool colorMode;
+    bool colorHalve;
+    struct Layer {
+      bool colorEnable;
+    } bg1, bg2, bg3, bg4, obj, back;
+
+    uint5 colorBlue;
+    uint5 colorGreen;
+    uint5 colorRed;
+  } io;
 
   struct Math {
-    struct Layer {
-      uint16 color;
-      bool color_enable;
-    } main, sub;
+    struct Screen {
+      uint15 color;
+      bool colorEnable;
+    } above, below;
     bool transparent;
-    bool addsub_mode;
-    bool color_halve;
+    bool blendMode;
+    bool colorHalve;
   } math;
 
-  void scanline();
-  alwaysinline void run();
-  void reset();
-
-  uint16 get_pixel_sub(bool hires);
-  uint16 get_pixel_main();
-  uint16 addsub(unsigned x, unsigned y);
-  alwaysinline uint16 get_color(unsigned palette);
-  alwaysinline uint16 get_direct_color(unsigned palette, unsigned tile);
-  alwaysinline uint16 fixed_color() const;
-
-  void serialize(serializer&);
-  Screen(PPU& self);
-
-  PPU& self;
   friend class PPU;
 };

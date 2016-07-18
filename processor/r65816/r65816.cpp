@@ -7,20 +7,33 @@ namespace Processor {
 #include "disassembler.cpp"
 #include "serialization.cpp"
 
-#define L last_cycle();
+#define E if(r.e)
+#define N if(!r.e)
+#define L lastCycle();
 #define call(op) (this->*op)()
 
-#include "opcode_read.cpp"
-#include "opcode_write.cpp"
-#include "opcode_rmw.cpp"
-#include "opcode_pc.cpp"
-#include "opcode_misc.cpp"
+#include "instructions-read.cpp"
+#include "instructions-write.cpp"
+#include "instructions-rmw.cpp"
+#include "instructions-pc.cpp"
+#include "instructions-misc.cpp"
 #include "switch.cpp"
 
-#undef L
-#undef call
+auto R65816::interrupt() -> void {
+  read(r.pc.d);
+  idle();
+N writeSP(r.pc.b);
+  writeSP(r.pc.h);
+  writeSP(r.pc.l);
+  writeSP(r.e ? (r.p & ~0x10) : r.p);
+  r.pc.l = read(r.vector + 0);
+  r.p.i = 1;
+  r.p.d = 0;
+  r.pc.h = read(r.vector + 1);
+  r.pc.b = 0x00;
+}
 
-//immediate, 2-cycle opcodes with I/O cycle will become bus read
+//immediate, 2-cycle opcodes with idle cycle will become bus read
 //when an IRQ is to be triggered immediately after opcode completion.
 //this affects the following opcodes:
 //  clc, cld, cli, clv, sec, sed, sei,
@@ -28,46 +41,36 @@ namespace Processor {
 //  tcd, tcs, tdc, tsc, tsx, txs,
 //  inc, inx, iny, dec, dex, dey,
 //  asl, lsr, rol, ror, nop, xce.
-auto R65816::op_io_irq() -> void {
-  if(interrupt_pending()) {
+auto R65816::idleIRQ() -> void {
+  if(interruptPending()) {
     //modify I/O cycle to bus read cycle, do not increment PC
-    op_read(regs.pc.d);
+    read(r.pc.d);
   } else {
-    op_io();
+    idle();
   }
 }
 
-auto R65816::op_io_cond2() -> void {
-  if(regs.d.l != 0x00) {
-    op_io();
+auto R65816::idle2() -> void {
+  if(r.d.l != 0x00) {
+    idle();
   }
 }
 
-auto R65816::op_io_cond4(uint16 x, uint16 y) -> void {
-  if(!regs.p.x || (x & 0xff00) != (y & 0xff00)) {
-    op_io();
+auto R65816::idle4(uint16 x, uint16 y) -> void {
+  if(!r.p.x || (x & 0xff00) != (y & 0xff00)) {
+    idle();
   }
 }
 
-auto R65816::op_io_cond6(uint16 addr) -> void {
-  if(regs.e && (regs.pc.w & 0xff00) != (addr & 0xff00)) {
-    op_io();
+auto R65816::idle6(uint16 addr) -> void {
+  if(r.e && (r.pc.w & 0xff00) != (addr & 0xff00)) {
+    idle();
   }
 }
 
-auto R65816::op_irq() -> void {
-  op_read(regs.pc.d);
-  op_io();
-  if(!regs.e) op_writestack(regs.pc.b);
-  op_writestack(regs.pc.h);
-  op_writestack(regs.pc.l);
-  op_writestack(regs.e ? (regs.p & ~0x10) : regs.p);
-  rd.l = op_read(regs.vector + 0);
-  regs.pc.b = 0x00;
-  regs.p.i  = 1;
-  regs.p.d  = 0;
-  rd.h = op_read(regs.vector + 1);
-  regs.pc.w = rd.w;
-}
+#undef E
+#undef N
+#undef L
+#undef call
 
 }

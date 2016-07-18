@@ -1,74 +1,60 @@
 #include <sfc/sfc.hpp>
 
-#define CARTRIDGE_CPP
 namespace SuperFamicom {
 
-#include "markup.cpp"
+#include "load.cpp"
+#include "save.cpp"
 #include "serialization.cpp"
 Cartridge cartridge;
 
-string Cartridge::title() {
-  if(information.title.satellaview.empty() == false) {
-    return {information.title.cartridge, " + ", information.title.satellaview};
-  }
-
-  if(information.title.sufamiTurboA.empty() == false) {
-    if(information.title.sufamiTurboB.empty() == true) {
-      return {information.title.cartridge, " + ", information.title.sufamiTurboA};
-    } else {
-      return {information.title.cartridge, " + ", information.title.sufamiTurboA, " + ", information.title.sufamiTurboB};
-    }
-  }
-
-  return information.title.cartridge;
+auto Cartridge::manifest() const -> string {
+  string manifest = information.manifest.cartridge;
+  if(information.manifest.gameBoy) manifest.append("\n[[Game Boy]]\n\n", information.manifest.gameBoy);
+  if(information.manifest.bsMemory) manifest.append("\n[[BS Memory]]\n\n", information.manifest.bsMemory);
+  if(information.manifest.sufamiTurboA) manifest.append("\n[[Sufami Turbo - Slot A]]\n\n", information.manifest.sufamiTurboA);
+  if(information.manifest.sufamiTurboB) manifest.append("\n[[Sufami Turbo - Slot B]]\n\n", information.manifest.sufamiTurboB);
+  return manifest;
 }
 
-void Cartridge::load() {
-  region = Region::NTSC;
+auto Cartridge::title() const -> string {
+  string title = information.title.cartridge;
+  if(information.title.gameBoy) title.append(" + ", information.title.gameBoy);
+  if(information.title.bsMemory) title.append(" + ", information.title.bsMemory);
+  if(information.title.sufamiTurboA) title.append(" + ", information.title.sufamiTurboA);
+  if(information.title.sufamiTurboB) title.append(" + ", information.title.sufamiTurboB);
+  return title;
+}
 
-  has_gb_slot    = false;
-  has_bs_cart    = false;
-  has_bs_slot    = false;
-  has_st_slots   = false;
-  has_nss_dip    = false;
-  has_event      = false;
-  has_sa1        = false;
-  has_superfx    = false;
-  has_armdsp     = false;
-  has_hitachidsp = false;
-  has_necdsp     = false;
-  has_epsonrtc   = false;
-  has_sharprtc   = false;
-  has_spc7110    = false;
-  has_sdd1       = false;
-  has_obc1       = false;
-  has_hsu1       = false;
-  has_msu1       = false;
+auto Cartridge::load() -> bool {
+  information = Information();
+  has = Has();
 
-  information.markup.cartridge    = "";
-  information.markup.satellaview  = "";
-  information.markup.sufamiTurboA = "";
-  information.markup.sufamiTurboB = "";
+  if(auto pathID = interface->load(ID::SuperFamicom, "Super Famicom", "sfc")) {
+    information.pathID = pathID();
+  } else return false;
 
-  information.title.cartridge     = "";
-  information.title.satellaview   = "";
-  information.title.sufamiTurboA  = "";
-  information.title.sufamiTurboB  = "";
+  if(auto fp = interface->open(ID::SuperFamicom, "manifest.bml", File::Read, File::Required)) {
+    information.manifest.cartridge = fp->reads();
+  } else return false;
+  auto document = BML::unserialize(information.manifest.cartridge);
+  loadCartridge(document);
 
-  interface->loadRequest(ID::Manifest, "manifest.bml");
-  parse_markup(information.markup.cartridge);
+  //Game Boy
+  if(cartridge.has.ICD2) {
+    information.sha256 = "";  //Game Boy cartridge not loaded yet: set later via loadGameBoy()
+  }
 
-  //Broadcast Satellaview
-  if(cartridge.has_bs_cart() && cartridge.has_bs_slot()) {
-    sha256 = Hash::SHA256(satellaviewcartridge.memory.data(), satellaviewcartridge.memory.size()).digest();
+  //BS Memory
+  else if(cartridge.has.MCC && cartridge.has.BSMemorySlot) {
+    information.sha256 = Hash::SHA256(bsmemory.memory.data(), bsmemory.memory.size()).digest();
   }
 
   //Sufami Turbo
-  else if(cartridge.has_st_slots()) {
+  else if(cartridge.has.SufamiTurboSlots) {
     Hash::SHA256 sha;
     sha.data(sufamiturboA.rom.data(), sufamiturboA.rom.size());
     sha.data(sufamiturboB.rom.data(), sufamiturboB.rom.size());
-    sha256 = sha.digest();
+    information.sha256 = sha.digest();
   }
 
   //Super Famicom
@@ -76,7 +62,7 @@ void Cartridge::load() {
     Hash::SHA256 sha;
     //hash each ROM image that exists; any with size() == 0 is ignored by sha256_chunk()
     sha.data(rom.data(), rom.size());
-    sha.data(bsxcartridge.rom.data(), bsxcartridge.rom.size());
+    sha.data(mcc.rom.data(), mcc.rom.size());
     sha.data(sa1.rom.data(), sa1.rom.size());
     sha.data(superfx.rom.data(), superfx.rom.size());
     sha.data(hitachidsp.rom.data(), hitachidsp.rom.size());
@@ -92,97 +78,61 @@ void Cartridge::load() {
     buffer = necdsp.firmware();
     sha.data(buffer.data(), buffer.size());
     //finalize hash
-    sha256 = sha.digest();
+    information.sha256 = sha.digest();
   }
 
-  rom.write_protect(true);
-  ram.write_protect(false);
-
-  system.load();
-  loaded = true;
+  rom.writeProtect(true);
+  ram.writeProtect(false);
+  return true;
 }
 
-void Cartridge::load_satellaview() {
-  interface->loadRequest(ID::SatellaviewManifest, "manifest.bml");
-  auto document = BML::unserialize(information.markup.satellaview);
-  information.title.satellaview = document["information/title"].text();
-
-  auto rom = document["cartridge/rom"];
-
-  if(rom["name"]) {
-    unsigned size = rom["size"].decimal();
-    satellaviewcartridge.memory.map(allocate<uint8>(size, 0xff), size);
-    interface->loadRequest(ID::SatellaviewROM, rom["name"].text());
-
-    satellaviewcartridge.readonly = (rom["type"].text() == "MaskROM");
-  }
+auto Cartridge::loadGameBoy() -> bool {
+  #if defined(SFC_SUPERGAMEBOY)
+  //invoked from ICD2::load()
+  information.sha256 = GameBoy::interface->sha256();
+  information.manifest.gameBoy = GameBoy::interface->manifest();
+  information.title.gameBoy = GameBoy::interface->title();
+  loadGameBoy(BML::unserialize(information.manifest.gameBoy));
+  return true;
+  #endif
+  return false;
 }
 
-void Cartridge::load_sufami_turbo_a() {
-  interface->loadRequest(ID::SufamiTurboSlotAManifest, "manifest.bml");
-  auto document = BML::unserialize(information.markup.sufamiTurboA);
-  information.title.sufamiTurboA = document["information/title"].text();
-
-  auto rom = document["cartridge/rom"];
-  auto ram = document["cartridge/ram"];
-
-  if(rom["name"]) {
-    unsigned size = rom["size"].decimal();
-    sufamiturboA.rom.map(allocate<uint8>(size, 0xff), size);
-    interface->loadRequest(ID::SufamiTurboSlotAROM, rom["name"].text());
-  }
-
-  if(ram["name"]) {
-    unsigned size = ram["size"].decimal();
-    sufamiturboA.ram.map(allocate<uint8>(size, 0xff), size);
-    interface->loadRequest(ID::SufamiTurboSlotARAM, ram["name"].text());
-    memory.append({ID::SufamiTurboSlotARAM, ram["name"].text()});
-  }
-
-  if(document["cartridge/linkable"]) {
-    interface->loadRequest(ID::SufamiTurboSlotB, "Sufami Turbo - Slot B", "st");
-  }
+auto Cartridge::loadBSMemory() -> bool {
+  if(auto fp = interface->open(bsmemory.pathID, "manifest.bml", File::Read, File::Required)) {
+    information.manifest.bsMemory = fp->reads();
+  } else return false;
+  loadBSMemory(BML::unserialize(information.manifest.bsMemory));
+  return true;
 }
 
-void Cartridge::load_sufami_turbo_b() {
-  interface->loadRequest(ID::SufamiTurboSlotBManifest, "manifest.bml");
-  auto document = BML::unserialize(information.markup.sufamiTurboB);
-  information.title.sufamiTurboB = document["information/title"].text();
-
-  auto rom = document["cartridge/rom"];
-  auto ram = document["cartridge/ram"];
-
-  if(rom["name"]) {
-    unsigned size = rom["size"].decimal();
-    sufamiturboB.rom.map(allocate<uint8>(size, 0xff), size);
-    interface->loadRequest(ID::SufamiTurboSlotBROM, rom["name"].text());
-  }
-
-  if(ram["name"]) {
-    unsigned size = ram["size"].decimal();
-    sufamiturboB.ram.map(allocate<uint8>(size, 0xff), size);
-    interface->loadRequest(ID::SufamiTurboSlotBRAM, ram["name"].text());
-    memory.append({ID::SufamiTurboSlotBRAM, ram["name"].text()});
-  }
+auto Cartridge::loadSufamiTurboA() -> bool {
+  if(auto fp = interface->open(sufamiturboA.pathID, "manifest.bml", File::Read, File::Required)) {
+    information.manifest.sufamiTurboA = fp->reads();
+  } else return false;
+  loadSufamiTurboA(BML::unserialize(information.manifest.sufamiTurboA));
+  return true;
 }
 
-void Cartridge::unload() {
-  if(loaded == false) return;
+auto Cartridge::loadSufamiTurboB() -> bool {
+  if(auto fp = interface->open(sufamiturboB.pathID, "manifest.bml", File::Read, File::Required)) {
+    information.manifest.sufamiTurboB = fp->reads();
+  } else return false;
+  loadSufamiTurboB(BML::unserialize(information.manifest.sufamiTurboB));
+  return true;
+}
 
-  system.unload();
+auto Cartridge::save() -> void {
+  saveCartridge(BML::unserialize(information.manifest.cartridge));
+  saveGameBoy(BML::unserialize(information.manifest.gameBoy));
+  saveBSMemory(BML::unserialize(information.manifest.bsMemory));
+  saveSufamiTurboA(BML::unserialize(information.manifest.sufamiTurboA));
+  saveSufamiTurboB(BML::unserialize(information.manifest.sufamiTurboB));
+}
+
+auto Cartridge::unload() -> void {
   rom.reset();
   ram.reset();
-
-  loaded = false;
-  memory.reset();
-}
-
-Cartridge::Cartridge() {
-  loaded = false;
-}
-
-Cartridge::~Cartridge() {
-  unload();
 }
 
 }

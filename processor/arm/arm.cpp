@@ -26,45 +26,54 @@ auto ARM::power() -> void {
 }
 
 auto ARM::exec() -> void {
-  cpsr().t ? thumb_step() : arm_step();
+  cpsr().t ? stepTHUMB() : stepARM();
 }
 
 auto ARM::idle() -> void {
   pipeline.nonsequential = true;
-  return bus_idle();
+  return _idle();
 }
 
-auto ARM::read(unsigned mode, uint32 addr) -> uint32 {
-  return bus_read(mode, addr);
+auto ARM::read(uint mode, uint32 addr) -> uint32 {
+  return _read(mode, addr);
 }
 
-auto ARM::load(unsigned mode, uint32 addr) -> uint32 {
+auto ARM::load(uint mode, uint32 addr) -> uint32 {
   pipeline.nonsequential = true;
-  uint32 word = bus_read(Load | mode, addr);
+  uint32 word = _read(Load | mode, addr);
 
-  if(mode & Half) { word &= 0xffff; word |= word << 16; }
-  if(mode & Byte) { word &= 0xff; word |= word << 8; word |= word << 16; }
+  if(mode & Half) {
+    addr &= 1;
+    word = mode & Signed ? (int16_t)word : (uint16_t)word;
+  }
 
-  word = ror(word, 8 * (addr & 3));
+  if(mode & Byte) {
+    addr &= 0;
+    word = mode & Signed ? (int8_t)word : (uint8_t)word;
+  }
+
+  if(mode & Signed) {
+    word = asr(word, 8 * (addr & 3));
+  } else {
+    word = ror(word, 8 * (addr & 3));
+  }
+
   idle();
-
-  if(mode & Half) word &= 0xffff;
-  if(mode & Byte) word &= 0xff;
   return word;
 }
 
-auto ARM::write(unsigned mode, uint32 addr, uint32 word) -> void {
+auto ARM::write(uint mode, uint32 addr, uint32 word) -> void {
   pipeline.nonsequential = true;
-  return bus_write(mode, addr, word);
+  return _write(mode, addr, word);
 }
 
-auto ARM::store(unsigned mode, uint32 addr, uint32 word) -> void {
+auto ARM::store(uint mode, uint32 addr, uint32 word) -> void {
   pipeline.nonsequential = true;
 
   if(mode & Half) { word &= 0xffff; word |= word << 16; }
   if(mode & Byte) { word &= 0xff; word |= word << 8; word |= word << 16; }
 
-  return bus_write(Store | mode, addr, word);
+  return _write(Store | mode, addr, word);
 }
 
 auto ARM::vector(uint32 addr, Processor::Mode mode) -> void {

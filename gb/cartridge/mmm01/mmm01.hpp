@@ -1,0 +1,15 @@
+struct MMM01 : MMIO {
+  auto readIO(uint16 addr) -> uint8;
+  auto writeIO(uint16 addr, uint8 data) -> void;
+  auto power() -> void;
+
+  struct ROM {
+    uint6 base;
+    uint8 select;
+  } rom;
+  struct RAM {
+    bool enable;
+    uint8 select;
+  } ram;
+  bool mode;
+} mmm01;

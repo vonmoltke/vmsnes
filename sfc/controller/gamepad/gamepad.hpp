@@ -1,13 +1,18 @@
 struct Gamepad : Controller {
-  uint2 data();
-  void latch(bool data);
+  enum : uint {
+    Up, Down, Left, Right, B, A, Y, X, L, R, Select, Start,
+  };
+
   Gamepad(bool port);
+
+  auto data() -> uint2;
+  auto latch(bool data) -> void;
 
 private:
   bool latched;
-  unsigned counter;
+  uint counter;
 
-  bool b, y, select, start;
-  bool up, down, left, right;
-  bool a, x, l, r;
+  boolean b, y, select, start;
+  boolean up, down, left, right;
+  boolean a, x, l, r;
 };

@@ -1,118 +1,116 @@
-#ifndef PROCESSOR_R6502_HPP
-#define PROCESSOR_R6502_HPP
-
-namespace Processor {
-
 //Ricoh 6502
 //* Ricoh 2A03
 //* Ricoh 2A07
 
+#pragma once
+
+namespace Processor {
+
 struct R6502 {
-  #include "registers.hpp"
+  virtual auto read(uint16 addr) -> uint8 = 0;
+  virtual auto write(uint16 addr, uint8 data) -> void = 0;
+  virtual auto lastCycle() -> void = 0;
+  virtual auto nmi(uint16& vector) -> void = 0;
+  virtual auto readDebugger(uint16 addr) -> uint8 { return 0u; }
 
-  virtual uint8 op_read(uint16 addr) = 0;
-  virtual void op_write(uint16 addr, uint8 data) = 0;
-  virtual void last_cycle() = 0;
-  virtual void nmi(uint16& vector) = 0;
-  virtual uint8 debugger_read(uint16 addr) { return 0u; }
+  auto mdr() const -> uint8;
+  auto power() -> void;
+  auto reset() -> void;
+  auto interrupt() -> void;
+  auto instruction() -> void;
 
-  uint8 mdr() const;
-  void power();
-  void reset();
-  void interrupt();
-  void exec();
-
-  void serialize(serializer&);
+  auto serialize(serializer&) -> void;
 
   //memory.cpp
-  uint8 op_readpc();
-  uint8 op_readpci();
-  uint8 op_readsp();
-  uint8 op_readzp(uint8 addr);
+  auto io() -> uint8;
+  auto readPC() -> uint8;
+  auto readSP() -> uint8;
+  auto readZP(uint8 addr) -> uint8;
 
-  void op_writesp(uint8 data);
-  void op_writezp(uint8 addr, uint8 data);
+  auto writeSP(uint8 data) -> void;
+  auto writeZP(uint8 addr, uint8 data) -> void;
 
-  void op_page(uint16 x, uint16 y);
-  void op_page_always(uint16 x, uint16 y);
+  auto ioPage(uint16 x, uint16 y) -> void;
+  auto ioPageAlways(uint16 x, uint16 y) -> void;
 
   //instructions.cpp
-  void opf_asl();
-  void opf_adc();
-  void opf_and();
-  void opf_bit();
-  void opf_cmp();
-  void opf_cpx();
-  void opf_cpy();
-  void opf_dec();
-  void opf_eor();
-  void opf_inc();
-  void opf_lda();
-  void opf_ldx();
-  void opf_ldy();
-  void opf_lsr();
-  void opf_ora();
-  void opf_rla();
-  void opf_rol();
-  void opf_ror();
-  void opf_rra();
-  void opf_sbc();
-  void opf_sla();
-  void opf_sra();
+  using fp = auto (R6502::*)() -> void;
+  auto fp_asl();
+  auto fp_adc();
+  auto fp_and();
+  auto fp_bit();
+  auto fp_cmp();
+  auto fp_cpx();
+  auto fp_cpy();
+  auto fp_dec();
+  auto fp_eor();
+  auto fp_inc();
+  auto fp_lda();
+  auto fp_ldx();
+  auto fp_ldy();
+  auto fp_lsr();
+  auto fp_ora();
+  auto fp_rla();
+  auto fp_rol();
+  auto fp_ror();
+  auto fp_rra();
+  auto fp_sbc();
+  auto fp_sla();
+  auto fp_sra();
 
-  void opi_branch(bool condition);
-  void opi_clear_flag(bool& flag);
-  void opi_decrement(uint8& r);
-  void opi_increment(uint8& r);
-  void opi_pull(uint8& r);
-  void opi_push(uint8& r);
-  template<void (R6502::*op)()> void opi_read_absolute();
-  template<void (R6502::*op)()> void opi_read_absolute_x();
-  template<void (R6502::*op)()> void opi_read_absolute_y();
-  template<void (R6502::*op)()> void opi_read_immediate();
-  template<void (R6502::*op)()> void opi_read_indirect_zero_page_x();
-  template<void (R6502::*op)()> void opi_read_indirect_zero_page_y();
-  template<void (R6502::*op)()> void opi_read_zero_page();
-  template<void (R6502::*op)()> void opi_read_zero_page_x();
-  template<void (R6502::*op)()> void opi_read_zero_page_y();
-  template<void (R6502::*op)()> void opi_rmw_absolute();
-  template<void (R6502::*op)()> void opi_rmw_absolute_x();
-  template<void (R6502::*op)()> void opi_rmw_zero_page();
-  template<void (R6502::*op)()> void opi_rmw_zero_page_x();
-  void opi_set_flag(bool& flag);
-  template<void (R6502::*op)()> void opi_shift();
-  void opi_store_absolute(uint8& r);
-  void opi_store_absolute_x(uint8& r);
-  void opi_store_absolute_y(uint8& r);
-  void opi_store_indirect_zero_page_x(uint8& r);
-  void opi_store_indirect_zero_page_y(uint8& r);
-  void opi_store_zero_page(uint8& r);
-  void opi_store_zero_page_x(uint8& r);
-  void opi_store_zero_page_y(uint8& r);
-  void opi_transfer(uint8& s, uint8& d, bool flag);
+  auto op_branch(bool condition);
+  auto op_clear_flag(uint bit);
+  auto op_decrement(uint8& r);
+  auto op_increment(uint8& r);
+  auto op_pull(uint8& r);
+  auto op_push(uint8& r);
+  auto op_read_absolute(fp);
+  auto op_read_absolute_x(fp);
+  auto op_read_absolute_y(fp);
+  auto op_read_immediate(fp);
+  auto op_read_indirect_zero_page_x(fp);
+  auto op_read_indirect_zero_page_y(fp);
+  auto op_read_zero_page(fp);
+  auto op_read_zero_page_x(fp);
+  auto op_read_zero_page_y(fp);
+  auto op_rmw_absolute(fp);
+  auto op_rmw_absolute_x(fp);
+  auto op_rmw_zero_page(fp);
+  auto op_rmw_zero_page_x(fp);
+  auto op_set_flag(uint bit);
+  auto op_shift(fp);
+  auto op_store_absolute(uint8& r);
+  auto op_store_absolute_x(uint8& r);
+  auto op_store_absolute_y(uint8& r);
+  auto op_store_indirect_zero_page_x(uint8& r);
+  auto op_store_indirect_zero_page_y(uint8& r);
+  auto op_store_zero_page(uint8& r);
+  auto op_store_zero_page_x(uint8& r);
+  auto op_store_zero_page_y(uint8& r);
+  auto op_transfer(uint8& s, uint8& d, bool flag);
 
-  void op_brk();
-  void op_jmp_absolute();
-  void op_jmp_indirect_absolute();
-  void op_jsr_absolute();
-  void op_nop();
-  void op_php();
-  void op_plp();
-  void op_rti();
-  void op_rts();
+  auto op_brk();
+  auto op_jmp_absolute();
+  auto op_jmp_indirect_absolute();
+  auto op_jsr_absolute();
+  auto op_nop();
+  auto op_php();
+  auto op_plp();
+  auto op_rti();
+  auto op_rts();
 
-  void opill_arr_immediate();
-  void opill_nop_absolute();
-  void opill_nop_absolute_x();
-  void opill_nop_immediate();
-  void opill_nop_implied();
-  void opill_nop_zero_page();
-  void opill_nop_zero_page_x();
+  auto op_arr_immediate();
+  auto op_nop_absolute();
+  auto op_nop_absolute_x();
+  auto op_nop_immediate();
+  auto op_nop_implied();
+  auto op_nop_zero_page();
+  auto op_nop_zero_page_x();
 
   //disassembler.cpp
-  string disassemble();
+  auto disassemble() -> string;
+
+  #include "registers.hpp"
 };
 
 }
-
-#endif

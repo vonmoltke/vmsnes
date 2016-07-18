@@ -1,12 +1,12 @@
-auto Program::stateName(unsigned slot, bool manager) -> string {
+auto Program::stateName(uint slot, bool manager) -> string {
   return {
-    folderPaths[0], "higan/states/",
+    mediumPaths(1), "higan/states/",
     manager ? "managed/" : "quick/",
-    "slot-", decimal<2>(slot), ".bst"
+    "slot-", numeral(slot, 2L), ".bst"
   };
 }
 
-auto Program::loadState(unsigned slot, bool manager) -> bool {
+auto Program::loadState(uint slot, bool manager) -> bool {
   if(!emulator) return false;
   auto location = stateName(slot, manager);
   auto memory = file::read(location);
@@ -16,12 +16,12 @@ auto Program::loadState(unsigned slot, bool manager) -> bool {
   return showMessage({"Loaded from slot ", slot}), true;
 }
 
-auto Program::saveState(unsigned slot, bool manager) -> bool {
+auto Program::saveState(uint slot, bool manager) -> bool {
   if(!emulator) return false;
   auto location = stateName(slot, manager);
   serializer s = emulator->serialize();
   if(s.size() == 0) return showMessage({"Failed to save state to slot ", slot}), false;
-  directory::create(location.pathname());
+  directory::create(Location::path(location));
   if(file::write(location, s.data(), s.size()) == false) {
     return showMessage({"Unable to write to slot ", slot}), false;
   }

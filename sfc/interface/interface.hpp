@@ -1,129 +1,86 @@
-#ifndef SFC_HPP
+#include <sfc/debugger.hpp>
+
 namespace SuperFamicom {
-#endif
 
 struct ID {
-  enum : unsigned {
-    //cartridges (folders)
+  enum : uint {
     System,
     SuperFamicom,
-    SuperGameBoy,
-    Satellaview,
-    SufamiTurboSlotA,
-    SufamiTurboSlotB,
-
-    //memory (files)
-    IPLROM,
-
-    Manifest,
-    ROM,
-    RAM,
-
-    EventROM0,
-    EventROM1,
-    EventROM2,
-    EventROM3,
-    EventRAM,
-
-    SA1ROM,
-    SA1IRAM,
-    SA1BWRAM,
-
-    SuperFXROM,
-    SuperFXRAM,
-
-    ArmDSPPROM,
-    ArmDSPDROM,
-    ArmDSPRAM,
-
-    HitachiDSPROM,
-    HitachiDSPRAM,
-    HitachiDSPDROM,
-    HitachiDSPDRAM,
-
-    Nec7725DSPPROM,
-    Nec7725DSPDROM,
-    Nec7725DSPRAM,
-
-    Nec96050DSPPROM,
-    Nec96050DSPDROM,
-    Nec96050DSPRAM,
-
-    EpsonRTC,
-    SharpRTC,
-
-    SPC7110PROM,
-    SPC7110DROM,
-    SPC7110RAM,
-
-    SDD1ROM,
-    SDD1RAM,
-
-    OBC1RAM,
-
-    SuperGameBoyBootROM,
-
-    BsxROM,
-    BsxRAM,
-    BsxPSRAM,
-
-    SuperGameBoyManifest,
-    SuperGameBoyROM,
-    SuperGameBoyRAM,
-
-    SatellaviewManifest,
-    SatellaviewROM,
-
-    SufamiTurboSlotAManifest,
-    SufamiTurboSlotAROM,
-    SufamiTurboSlotARAM,
-
-    SufamiTurboSlotBManifest,
-    SufamiTurboSlotBROM,
-    SufamiTurboSlotBRAM,
-
-    //controller ports
-    Port1 = 1,
-    Port2 = 2,
+    GameBoy,
+    BSMemory,
+    SufamiTurboA,
+    SufamiTurboB,
   };
+
+  struct Port { enum : uint {
+    Controller1,
+    Controller2,
+    Expansion,
+  };};
+
+  struct Device { enum : uint {
+    None,
+    Gamepad,
+    Mouse,
+    SuperMultitap,
+    SuperScope,
+    Justifier,
+    Justifiers,
+
+    Satellaview,
+    SuperDisc,
+    S21FX,
+  };};
 };
 
 struct Interface : Emulator::Interface {
-  string title();
-  double videoFrequency();
-  double audioFrequency();
-
-  bool loaded();
-  string sha256();
-  unsigned group(unsigned id);
-  void load(unsigned id);
-  void save();
-  void load(unsigned id, const stream& stream);
-  void save(unsigned id, const stream& stream);
-  void unload();
-
-  void connect(unsigned port, unsigned device);
-  void power();
-  void reset();
-  void run();
-
-  bool rtc();
-  void rtcsync();
-
-  serializer serialize();
-  bool unserialize(serializer&);
-
-  void cheatSet(const lstring&);
-
-  void paletteUpdate(PaletteMode mode);
+  using Emulator::Interface::load;
 
   Interface();
 
-  vector<Device> device;
+  auto manifest() -> string override;
+  auto title() -> string override;
+  auto videoFrequency() -> double override;
+  auto videoColors() -> uint32 override;
+  auto videoColor(uint32 color) -> uint64 override;
+  auto audioFrequency() -> double override;
+
+  auto loaded() -> bool override;
+  auto sha256() -> string override;
+  auto load(uint id) -> bool override;
+  auto save() -> void override;
+  auto unload() -> void override;
+
+  auto connect(uint port, uint device) -> void override;
+  auto power() -> void override;
+  auto reset() -> void override;
+  auto run() -> void override;
+
+  auto rtc() -> bool override;
+  auto rtcsync() -> void override;
+
+  auto serialize() -> serializer override;
+  auto unserialize(serializer&) -> bool override;
+
+  auto cheatSet(const string_vector&) -> void override;
+
+  auto cap(const string& name) -> bool override;
+  auto get(const string& name) -> any override;
+  auto set(const string& name, const any& value) -> bool override;
+};
+
+struct Settings {
+  bool blurEmulation = true;
+  bool colorEmulation = true;
+  bool scanlineEmulation = true;
+
+  uint controllerPort1 = 0;
+  uint controllerPort2 = 0;
+  uint expansionPort = 0;
+  bool random = true;
 };
 
 extern Interface* interface;
+extern Settings settings;
 
-#ifndef SFC_HPP
 }
-#endif
